@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="DevVerse — code together in real time, talk, run code, review, and compete."
+    />
+    <meta name="theme-color" content="#0b1020" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f7f8fc" media="(prefers-color-scheme: light)" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>DevVerse</title>
+    <script>
+      // Apply the saved theme before first paint to avoid a flash of the wrong theme.
+      try {
+        const saved = localStorage.getItem('devverse-theme');
+        if (saved === 'light' || saved === 'dark') document.documentElement.dataset.theme = saved;
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>DevVerse needs JavaScript enabled to run the collaborative editor.</noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

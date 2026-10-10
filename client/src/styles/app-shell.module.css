@@ -1,0 +1,62 @@
+/* [CONCEPT: CSS Grid Layout] Named grid areas define the page skeleton; a media query collapses it on small screens. */
+.shell {
+  display: grid;
+  grid-template-areas:
+    'header'
+    'main'
+    'footer';
+  grid-template-rows: var(--header-height) 1fr auto;
+  min-height: 100dvh;
+}
+
+.header {
+  grid-area: header;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex; /* [CONCEPT: Flexbox] one-dimensional alignment for the toolbar */
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-inline: 1rem;
+  background: color-mix(in srgb, var(--color-surface) 85%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.main {
+  grid-area: main;
+  width: 100%;
+  max-width: 1200px;
+  margin-inline: auto;
+  padding: 1.5rem 1rem;
+}
+
+.footer {
+  grid-area: footer;
+  padding: 1rem;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  border-top: 1px solid var(--color-border);
+}
+
+.skipLink {
+  position: absolute;
+  left: 0.5rem;
+  top: -100px;
+  padding: 0.5rem 1rem;
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  border-radius: var(--radius-sm);
+  z-index: 100;
+}
+.skipLink:focus {
+  top: 0.5rem;
+}
+
+@media (min-width: 768px) {
+  .main {
+    padding: 2rem 1.5rem;
+  }
+}

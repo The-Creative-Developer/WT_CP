@@ -1,0 +1,21 @@
+{
+  "name": "@devverse/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Types, Zod schemas and socket event contracts shared by client, server and runner.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
+  }
+}
