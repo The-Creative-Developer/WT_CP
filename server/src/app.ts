@@ -8,12 +8,21 @@ import { pinoHttp } from 'pino-http';
 import type { Env } from './config/env';
 import { errorHandler, notFound } from './middleware/error-handler';
 import { requestId } from './middleware/request-id';
-import { apiRouter } from './routes';
+import { createApiRouter } from './routes';
 import { healthRouter } from './routes/health';
+import { createAuthService } from './services/auth';
+import { HttpError } from './utils/http-error';
 import { logger } from './utils/logger';
 
-export function createApp(env: Pick<Env, 'CORS_ORIGINS' | 'NODE_ENV'>) {
+export type AppEnv = Pick<
+  Env,
+  'CORS_ORIGINS' | 'NODE_ENV' | 'JWT_ACCESS_SECRET' | 'JWT_REFRESH_SECRET'
+>;
+
+export function createApp(env: AppEnv) {
   const app = express();
+  const isTest = env.NODE_ENV === 'test';
+  const auth = createAuthService(env);
 
   // Caddy terminates TLS in production; trust it so req.ip and secure cookies work.
   app.set('trust proxy', 1);
@@ -57,12 +66,23 @@ export function createApp(env: Pick<Env, 'CORS_ORIGINS' | 'NODE_ENV'>) {
     '/api',
     rateLimit({
       windowMs: 60_000,
-      limit: env.NODE_ENV === 'test' ? 10_000 : 300,
+      limit: isTest ? 10_000 : 300,
       standardHeaders: 'draft-8',
       legacyHeaders: false,
+      handler: (_req, _res, next) => next(new HttpError(429, 'Too many requests, slow down')),
     }),
   );
-  app.use('/api/v1', apiRouter);
+  app.use(
+    '/api/v1',
+    createApiRouter({
+      auth,
+      authOptions: {
+        secureCookies: env.NODE_ENV === 'production',
+        trustedOrigins: env.CORS_ORIGINS,
+        attemptLimit: isTest ? 10_000 : 10,
+      },
+    }),
+  );
 
   app.use(notFound);
   app.use(errorHandler);

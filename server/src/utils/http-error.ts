@@ -21,7 +21,7 @@ export class HttpError extends Error {
   static notFound(message = 'Resource not found') {
     return new HttpError(404, message);
   }
-  static conflict(message = 'Resource already exists') {
-    return new HttpError(409, message);
+  static conflict(message = 'Resource already exists', details?: unknown) {
+    return new HttpError(409, message, details);
   }
 }
