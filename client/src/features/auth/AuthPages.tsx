@@ -1,6 +1,7 @@
 import { loginSchema, registerSchema } from '@devverse/shared';
 import type { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router';
+import { FormError, SubmitButton } from '../../components/forms/FormParts';
 import { TextField } from '../../components/forms/TextField';
 import { useZodForm } from '../../hooks/useZodForm';
 import { useAuth } from './AuthContext';
@@ -126,38 +127,5 @@ function SwitchLink({ to, children }: { to: string; children: ReactNode }) {
     <Link to={to} state={location.state} className="font-medium text-accent underline">
       {children}
     </Link>
-  );
-}
-
-function FormError({ message }: { message: string | null }) {
-  // [CONCEPT: Live Regions] role="alert" is announced immediately when the message appears.
-  return (
-    <div role="alert" className="empty:hidden">
-      {message && (
-        <p className="rounded-md border border-danger bg-danger/10 px-3 py-2 text-sm text-danger">
-          {message}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function SubmitButton({
-  submitting,
-  idle,
-  busy,
-}: {
-  submitting: boolean;
-  idle: string;
-  busy: string;
-}) {
-  return (
-    <button
-      type="submit"
-      disabled={submitting}
-      className="mt-2 rounded-lg bg-accent px-4 py-2.5 font-semibold text-accent-contrast disabled:opacity-60"
-    >
-      {submitting ? busy : idle}
-    </button>
   );
 }
