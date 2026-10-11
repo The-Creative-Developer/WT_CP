@@ -11,6 +11,8 @@
   --color-muted: var(--color-text-muted);
   --color-accent: var(--color-accent);
   --color-accent-contrast: var(--color-accent-contrast);
+  --color-danger: var(--color-danger);
+  --color-success: var(--color-success);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
 }

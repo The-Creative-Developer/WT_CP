@@ -1,8 +1,9 @@
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from './app';
+import { testEnv } from './test/helpers';
 
-const app = createApp({ CORS_ORIGINS: ['http://localhost:5173'], NODE_ENV: 'test' });
+const app = createApp(testEnv);
 
 describe('app', () => {
   it('reports degraded health when the database is not connected', async () => {

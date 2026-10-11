@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router';
+import { AccountControls } from '../../features/auth/AccountControls';
 import styles from '../../styles/app-shell.module.css';
 import { ServerStatus } from './ServerStatus';
 import { ThemeToggle } from './ThemeToggle';
@@ -33,7 +34,10 @@ export function AppShell() {
             </li>
           </ul>
         </nav>
-        <ThemeToggle />
+        <div className="flex items-center gap-2">
+          <AccountControls />
+          <ThemeToggle />
+        </div>
       </header>
       <main id="main-content" className={styles.main} tabIndex={-1}>
         <Outlet />

@@ -24,12 +24,42 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
+// [CONCEPT: PATCH Semantics] Every field is optional: the client sends only what changed.
+export const updateMeSchema = z
+  .object({
+    bio: z.string().trim().max(280, 'Bio must be at most 280 characters'),
+    avatarUrl: z
+      .string()
+      .trim()
+      .url('Enter a valid URL')
+      .refine((url) => url.startsWith('https://'), 'Avatar URL must use https')
+      .or(z.literal('')),
+  })
+  .partial()
+  .strict();
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+export type UpdateMeInput = z.infer<typeof updateMeSchema>;
 
 export interface PublicUser {
   id: string;
   username: string;
   avatarUrl?: string;
   bio?: string;
+}
+
+/** The signed-in user's own profile: includes private fields such as email. */
+export interface SelfUser extends PublicUser {
+  email: string;
+  stats: { solved: number; xp: number };
+  createdAt: string;
+}
+
+/** Body returned by register, login and refresh. The refresh token travels separately in an httpOnly cookie. */
+export interface AuthResponse {
+  user: SelfUser;
+  accessToken: string;
+  /** Seconds until the access token expires. */
+  expiresIn: number;
 }
