@@ -1,8 +1,15 @@
 import { LANGUAGES, type RoomDetail } from '@devverse/shared';
-import { useEffect, useId, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useId, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
+import { ErrorBoundary } from '../components/ErrorBoundary';
+import { useAuth } from '../features/auth/AuthContext';
 import { useDeleteRoom, useJoinRoom, useRoom } from '../features/rooms/queries';
 import { ApiError } from '../lib/api';
+
+// [CONCEPT: Code Splitting] Monaco is the biggest dependency in the app; React.lazy downloads it only when a room
+// is opened, keeping the dashboard and login pages fast.
+const loadEditor = () => import('../features/editor/CollabEditor');
+let CollabEditor = lazy(loadEditor);
 
 export function RoomPage() {
   const { slug = '' } = useParams();
@@ -96,6 +103,11 @@ function JoinPrompt({ slug, invite, room }: { slug: string; invite?: string; roo
 }
 
 function RoomView({ room }: { room: RoomDetail }) {
+  const { state } = useAuth();
+  const username = state.status === 'authenticated' ? state.user.username : 'anonymous';
+  // One file per room for now; Week 2 adds a file tree and tabs.
+  const file = room.files[0];
+
   return (
     <div className="flex flex-col gap-6">
       <title>{`${room.name} · DevVerse`}</title>
@@ -108,27 +120,62 @@ function RoomView({ room }: { room: RoomDetail }) {
           {room.visibility === 'private' ? 'Private' : 'Public'}
         </span>
         <span className="text-sm text-muted">
-          You're {room.role === 'owner' ? 'the owner' : `an ${room.role}`}
+          You're{' '}
+          {room.role === 'owner' ? 'the owner' : room.role === 'editor' ? 'an editor' : 'a viewer'}
         </span>
       </header>
 
       {/* [CONCEPT: CSS Grid Layout] Editor beside a sidebar on wide screens; stacked on phones. */}
       <div className="grid gap-6 lg:grid-cols-[1fr_18rem]">
-        <section
-          aria-labelledby="files-title"
-          className="rounded-xl border border-border bg-surface p-5"
-        >
-          <h2 id="files-title" className="font-semibold">
-            Files
-          </h2>
-          <ul className="mt-2 font-mono text-sm">
-            {room.files.map((file) => (
-              <li key={file.id}>{file.path}</li>
-            ))}
-          </ul>
-          <p className="mt-6 rounded-lg border border-dashed border-border p-6 text-center text-muted">
-            The live editor arrives next, with Yjs real-time sync.
-          </p>
+        {/* min-w-0 lets the grid column shrink below the editor's natural width instead of overflowing. */}
+        <section aria-label="Code editor" className="min-w-0">
+          {file ? (
+            <ErrorBoundary
+              fallback={(retry) => (
+                <div
+                  role="alert"
+                  className="flex h-[60vh] min-h-80 flex-col items-center justify-center gap-3 rounded-xl border border-danger bg-surface"
+                >
+                  <p>The editor failed to load.</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // React.lazy caches a failed import, so start a fresh one before retrying.
+                      CollabEditor = lazy(loadEditor);
+                      retry();
+                    }}
+                    className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-surface-2"
+                  >
+                    Try again
+                  </button>
+                </div>
+              )}
+            >
+              <Suspense
+                fallback={
+                  <p
+                    role="status"
+                    className="flex h-[60vh] min-h-80 items-center justify-center rounded-xl border border-border bg-surface text-muted"
+                  >
+                    Loading the editor…
+                  </p>
+                }
+              >
+                <CollabEditor
+                  slug={room.slug}
+                  fileId={file.id}
+                  path={file.path}
+                  language={room.language}
+                  readOnly={room.role === 'viewer'}
+                  username={username}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          ) : (
+            <p className="rounded-xl border border-dashed border-border p-6 text-center text-muted">
+              This room has no files.
+            </p>
+          )}
         </section>
 
         <aside aria-label="Room details" className="flex flex-col gap-6">

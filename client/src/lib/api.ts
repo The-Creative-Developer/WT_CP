@@ -29,6 +29,11 @@ export function setSession(session: AuthResponse | null) {
   sessionListeners.forEach((listener) => listener(session));
 }
 
+/** The current access token, for transports that can't go through api() (e.g. WebSocket URLs). */
+export function getAccessToken(): string | null {
+  return accessToken;
+}
+
 export function onSessionChange(listener: (session: AuthResponse | null) => void) {
   sessionListeners.add(listener);
   return () => void sessionListeners.delete(listener);

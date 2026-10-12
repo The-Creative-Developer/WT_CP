@@ -39,3 +39,15 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Other people's selections and carets in the shared editor (classes added by y-monaco).
+   Week 2 colours them per person and adds name labels. */
+.yRemoteSelection {
+  background-color: color-mix(in srgb, var(--color-accent) 25%, transparent);
+}
+.yRemoteSelectionHead {
+  position: absolute;
+  height: 100%;
+  border-left: 2px solid var(--color-accent);
+  box-sizing: border-box;
+}
