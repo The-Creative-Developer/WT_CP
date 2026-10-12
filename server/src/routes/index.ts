@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth } from '../middleware/auth';
 import type { AuthService } from '../services/auth';
 import { createAuthRouter, type AuthRouterOptions } from './auth';
+import { createRoomsRouter } from './rooms';
 import { createUsersRouter } from './users';
 
 export interface ApiDeps {
@@ -20,8 +21,8 @@ export function createApiRouter({ auth, authOptions }: ApiDeps) {
 
   router.use('/auth', createAuthRouter(auth, authOptions));
   router.use('/users', createUsersRouter(authenticate));
+  router.use('/rooms', createRoomsRouter(authenticate));
   // Mounted as they are built:
-  // router.use('/rooms', createRoomsRouter(authenticate));
   // router.use('/projects', createProjectsRouter(authenticate));
 
   return router;

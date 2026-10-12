@@ -6,6 +6,7 @@ import { Dashboard } from './routes/Dashboard';
 import { Home } from './routes/Home';
 import { NotFound, RouteError } from './routes/NotFound';
 import { Placeholder } from './routes/Placeholder';
+import { RoomPage } from './routes/RoomPage';
 
 export const router = createBrowserRouter([
   {
@@ -26,7 +27,7 @@ export const router = createBrowserRouter([
         element: <RequireAuth />,
         children: [
           { path: 'dashboard', element: <Dashboard /> },
-          { path: 'rooms/:slug', element: <Placeholder title="Room" week="Week 1–2" /> },
+          { path: 'rooms/:slug', element: <RoomPage /> },
         ],
       },
       { path: '*', element: <NotFound /> },

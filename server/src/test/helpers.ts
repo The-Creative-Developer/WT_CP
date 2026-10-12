@@ -1,4 +1,4 @@
-import { MongoMemoryServer } from 'mongodb-memory-server';
+import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import mongoose from 'mongoose';
 import { afterAll, afterEach, beforeAll } from 'vitest';
 import type { AppEnv } from '../app';
@@ -12,10 +12,11 @@ export const testEnv: AppEnv = {
 
 /** Runs the test file against a throwaway in-memory MongoDB, emptied after every test. */
 export function useTestDatabase() {
-  let mongo: MongoMemoryServer;
+  let mongo: MongoMemoryReplSet;
 
   beforeAll(async () => {
-    mongo = await MongoMemoryServer.create();
+    // A one-node replica set, like local dev and Atlas: transactions don't work on a standalone server.
+    mongo = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(mongo.getUri());
     // Build unique/TTL indexes up front so duplicate-key behaviour is tested for real.
     await mongoose.connection.syncIndexes();

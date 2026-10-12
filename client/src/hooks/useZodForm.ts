@@ -17,9 +17,15 @@ function firstErrors(error: z.ZodError): FieldErrors {
   );
 }
 
+type Field = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+const isField = (el: unknown): el is Field =>
+  el instanceof HTMLInputElement ||
+  el instanceof HTMLSelectElement ||
+  el instanceof HTMLTextAreaElement;
+
 function focusFirstInvalid(form: HTMLFormElement, errors: FieldErrors) {
   for (const element of form.elements) {
-    if (element instanceof HTMLInputElement && errors[element.name]) {
+    if (isField(element) && errors[element.name]) {
       element.focus();
       return;
     }
@@ -80,7 +86,7 @@ export function useZodForm<Schema extends ZodType>(
 
   function onBlur(event: FocusEvent<HTMLFormElement>) {
     const field = event.target;
-    if (!(field instanceof HTMLInputElement) || !field.name) return;
+    if (!isField(field) || !field.name) return;
     // [CONCEPT: Inline Validation Timing] Before the first submit, blur only clears errors, never adds them. Adding one
     // would shift the layout under the pointer, so a click on "Submit" could land on empty space.
     if (!attempted && !errors[field.name]) return;
@@ -90,5 +96,18 @@ export function useZodForm<Schema extends ZodType>(
     setErrors((prev) => ({ ...prev, [field.name]: message }));
   }
 
-  return { errors, formError, submitting, formProps: { onSubmit, onBlur, noValidate: true } };
+  /** Clears all messages, e.g. when a dialog containing the form is reopened. */
+  function reset() {
+    setErrors({});
+    setFormError(null);
+    setAttempted(false);
+  }
+
+  return {
+    errors,
+    formError,
+    submitting,
+    reset,
+    formProps: { onSubmit, onBlur, noValidate: true },
+  };
 }
