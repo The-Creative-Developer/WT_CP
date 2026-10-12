@@ -139,6 +139,24 @@ export async function getRoom(userId: string, slug: string): Promise<RoomDetail>
 }
 
 /**
+ * Who may open a file's live document, and how. Members only: someone browsing a public room joins first
+ * (as a viewer) before they can watch the code.
+ */
+export async function resolveFileAccess(
+  userId: string,
+  slug: string,
+  fileId: string,
+): Promise<{ role: RoomRole; projectId: string }> {
+  const room = await findRoom(slug);
+  const role = roleOf(room, userId);
+  if (!role) throw HttpError.forbidden('Join this room to open its files');
+  if (!Types.ObjectId.isValid(fileId)) throw HttpError.notFound('File not found');
+  const file = await File.exists({ _id: fileId, projectId: room.projectId });
+  if (!file) throw HttpError.notFound('File not found');
+  return { role, projectId: room.projectId.toString() };
+}
+
+/**
  * An invite link makes you an editor. Without one, anyone may join a public room as a viewer.
  * Joining twice is harmless (idempotent), and a valid invite upgrades an existing viewer.
  */
