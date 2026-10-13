@@ -4,6 +4,8 @@ export class HttpError extends Error {
     public readonly status: number,
     message: string,
     public readonly details?: unknown,
+    /** Extra response headers, e.g. Retry-After on a 429 or 503. */
+    public readonly headers: Record<string, string> = {},
   ) {
     super(message);
     this.name = 'HttpError';
@@ -23,5 +25,12 @@ export class HttpError extends Error {
   }
   static conflict(message = 'Resource already exists', details?: unknown) {
     return new HttpError(409, message, details);
+  }
+  // [CONCEPT: Retry-After] Tells a well-behaved client how many seconds to wait before trying again.
+  static tooManyRequests(message: string, retryAfterSeconds: number) {
+    return new HttpError(429, message, undefined, { 'Retry-After': String(retryAfterSeconds) });
+  }
+  static serviceUnavailable(message: string, retryAfterSeconds: number) {
+    return new HttpError(503, message, undefined, { 'Retry-After': String(retryAfterSeconds) });
   }
 }

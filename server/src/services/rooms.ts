@@ -1,6 +1,7 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import {
   MAX_ROOM_MEMBERS,
+  type Language,
   type CreateRoomInput,
   type RoomDetail,
   type RoomRole,
@@ -138,22 +139,49 @@ export async function getRoom(userId: string, slug: string): Promise<RoomDetail>
   return toDetail(room, userId);
 }
 
+export interface RoomAccess {
+  roomId: string;
+  slug: string;
+  projectId: string;
+  language: Language;
+  role: RoomRole;
+}
+
 /**
- * Who may open a file's live document, and how. Members only: someone browsing a public room joins first
- * (as a viewer) before they can watch the code.
+ * The caller's role in a room, for anything that happens inside it (live files, runs, socket events).
+ * Members only: someone browsing a public room joins first (as a viewer).
  */
+export async function resolveRoomAccess(
+  userId: string,
+  room: { slug: string } | { id: Types.ObjectId | string },
+  notMemberMessage = 'Join this room first',
+): Promise<RoomAccess> {
+  const found = await Room.findOne('slug' in room ? { slug: room.slug } : { _id: room.id })
+    .select('slug projectId language members')
+    .lean();
+  if (!found) throw HttpError.notFound('Room not found');
+  const role = roleOf(found, userId);
+  if (!role) throw HttpError.forbidden(notMemberMessage);
+  return {
+    roomId: found._id.toString(),
+    slug: found.slug,
+    projectId: found.projectId.toString(),
+    language: found.language,
+    role,
+  };
+}
+
+/** Who may open a file's live document, and how. */
 export async function resolveFileAccess(
   userId: string,
   slug: string,
   fileId: string,
-): Promise<{ role: RoomRole; projectId: string }> {
-  const room = await findRoom(slug);
-  const role = roleOf(room, userId);
-  if (!role) throw HttpError.forbidden('Join this room to open its files');
+): Promise<RoomAccess> {
+  const access = await resolveRoomAccess(userId, { slug }, 'Join this room to open its files');
   if (!Types.ObjectId.isValid(fileId)) throw HttpError.notFound('File not found');
-  const file = await File.exists({ _id: fileId, projectId: room.projectId });
+  const file = await File.exists({ _id: fileId, projectId: access.projectId });
   if (!file) throw HttpError.notFound('File not found');
-  return { role, projectId: room.projectId.toString() };
+  return access;
 }
 
 /**

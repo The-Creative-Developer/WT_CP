@@ -1,9 +1,11 @@
 import { LANGUAGES, type RoomDetail } from '@devverse/shared';
-import { lazy, Suspense, useEffect, useId, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useAuth } from '../features/auth/AuthContext';
 import { useDeleteRoom, useJoinRoom, useRoom } from '../features/rooms/queries';
+import { RunPanel } from '../features/run/RunPanel';
+import { useRoomRun, useRunShortcut } from '../features/run/useRoomRun';
 import { ApiError } from '../lib/api';
 
 // [CONCEPT: Code Splitting] Monaco is the biggest dependency in the app; React.lazy downloads it only when a room
@@ -107,6 +109,14 @@ function RoomView({ room }: { room: RoomDetail }) {
   const username = state.status === 'authenticated' ? state.user.username : 'anonymous';
   // One file per room for now; Week 2 adds a file tree and tabs.
   const file = room.files[0];
+  const runner = useRoomRun(room.slug, username);
+  const canRun = room.role !== 'viewer' && !!file;
+  const { runFile, busy } = runner;
+  const fileId = file?.id;
+  const run = useCallback(() => {
+    if (canRun && fileId && !busy) runFile(fileId);
+  }, [canRun, fileId, busy, runFile]);
+  useRunShortcut(run);
 
   return (
     <div className="flex flex-col gap-6">
@@ -128,55 +138,59 @@ function RoomView({ room }: { room: RoomDetail }) {
       {/* [CONCEPT: CSS Grid Layout] Editor beside a sidebar on wide screens; stacked on phones. */}
       <div className="grid gap-6 lg:grid-cols-[1fr_18rem]">
         {/* min-w-0 lets the grid column shrink below the editor's natural width instead of overflowing. */}
-        <section aria-label="Code editor" className="min-w-0">
-          {file ? (
-            <ErrorBoundary
-              fallback={(retry) => (
-                <div
-                  role="alert"
-                  className="flex h-[60vh] min-h-80 flex-col items-center justify-center gap-3 rounded-xl border border-danger bg-surface"
-                >
-                  <p>The editor failed to load.</p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // React.lazy caches a failed import, so start a fresh one before retrying.
-                      CollabEditor = lazy(loadEditor);
-                      retry();
-                    }}
-                    className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-surface-2"
+        <div className="flex min-w-0 flex-col gap-4">
+          <section aria-label="Code editor" className="min-w-0">
+            {file ? (
+              <ErrorBoundary
+                fallback={(retry) => (
+                  <div
+                    role="alert"
+                    className="flex h-[60vh] min-h-80 flex-col items-center justify-center gap-3 rounded-xl border border-danger bg-surface"
                   >
-                    Try again
-                  </button>
-                </div>
-              )}
-            >
-              <Suspense
-                fallback={
-                  <p
-                    role="status"
-                    className="flex h-[60vh] min-h-80 items-center justify-center rounded-xl border border-border bg-surface text-muted"
-                  >
-                    Loading the editor…
-                  </p>
-                }
+                    <p>The editor failed to load.</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // React.lazy caches a failed import, so start a fresh one before retrying.
+                        CollabEditor = lazy(loadEditor);
+                        retry();
+                      }}
+                      className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-surface-2"
+                    >
+                      Try again
+                    </button>
+                  </div>
+                )}
               >
-                <CollabEditor
-                  slug={room.slug}
-                  fileId={file.id}
-                  path={file.path}
-                  language={room.language}
-                  readOnly={room.role === 'viewer'}
-                  username={username}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          ) : (
-            <p className="rounded-xl border border-dashed border-border p-6 text-center text-muted">
-              This room has no files.
-            </p>
-          )}
-        </section>
+                <Suspense
+                  fallback={
+                    <p
+                      role="status"
+                      className="flex h-[60vh] min-h-80 items-center justify-center rounded-xl border border-border bg-surface text-muted"
+                    >
+                      Loading the editor…
+                    </p>
+                  }
+                >
+                  <CollabEditor
+                    slug={room.slug}
+                    fileId={file.id}
+                    path={file.path}
+                    language={room.language}
+                    readOnly={room.role === 'viewer'}
+                    username={username}
+                    onRun={canRun ? run : undefined}
+                  />
+                </Suspense>
+              </ErrorBoundary>
+            ) : (
+              <p className="rounded-xl border border-dashed border-border p-6 text-center text-muted">
+                This room has no files.
+              </p>
+            )}
+          </section>
+          <RunPanel runner={runner} canRun={canRun} onRun={run} />
+        </div>
 
         <aside aria-label="Room details" className="flex flex-col gap-6">
           <section aria-labelledby="members-title">

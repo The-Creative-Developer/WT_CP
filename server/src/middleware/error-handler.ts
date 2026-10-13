@@ -12,6 +12,7 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (status >= 500) logger.error({ err, requestId: req.id }, 'Unhandled error');
 
   const isProd = process.env.NODE_ENV === 'production';
+  if (err instanceof HttpError) res.set(err.headers);
   res
     .status(status)
     .type('application/problem+json')

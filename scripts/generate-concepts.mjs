@@ -2,8 +2,10 @@
 // an index graders can use to jump from a web-development concept to the code that implements it.
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = new URL('..', import.meta.url).pathname;
+// fileURLToPath, not .pathname: the latter keeps spaces as %20 and breaks in folders like "Kingston XS2000 (APFS)".
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SCAN_DIRS = ['client', 'server', 'runner', 'shared'];
 const EXTENSIONS = /\.(ts|tsx|js|mjs|css|html)$/;
 const SKIP = new Set(['node_modules', 'dist', 'coverage']);

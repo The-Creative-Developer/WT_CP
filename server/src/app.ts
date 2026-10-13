@@ -11,6 +11,7 @@ import { requestId } from './middleware/request-id';
 import { createApiRouter } from './routes';
 import { healthRouter } from './routes/health';
 import { createAuthService, type AuthService } from './services/auth';
+import type { RunService } from './services/runs';
 import { HttpError } from './utils/http-error';
 import { logger } from './utils/logger';
 
@@ -19,7 +20,11 @@ export type AppEnv = Pick<
   'CORS_ORIGINS' | 'NODE_ENV' | 'JWT_ACCESS_SECRET' | 'JWT_REFRESH_SECRET'
 >;
 
-export function createApp(env: AppEnv, auth: AuthService = createAuthService(env)) {
+export function createApp(
+  env: AppEnv,
+  auth: AuthService = createAuthService(env),
+  runs?: RunService,
+) {
   const app = express();
   const isTest = env.NODE_ENV === 'test';
 
@@ -80,6 +85,7 @@ export function createApp(env: AppEnv, auth: AuthService = createAuthService(env
         trustedOrigins: env.CORS_ORIGINS,
         attemptLimit: isTest ? 10_000 : 10,
       },
+      runs,
     }),
   );
 

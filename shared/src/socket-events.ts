@@ -1,4 +1,6 @@
+import type { Language } from './languages';
 import type { RoomRole } from './roles';
+import type { RunVerdict } from './schemas/run';
 
 // [CONCEPT: Typed Event Contracts] Socket.IO generics make every emit/on call type-checked on both ends.
 
@@ -22,13 +24,27 @@ export interface ChatMessage {
 
 export type RunStream = 'stdout' | 'stderr';
 
+export interface RunFinishedPayload {
+  runId: string;
+  /** null when the run failed before the program could finish (see `error`). */
+  verdict: RunVerdict | null;
+  exitCode: number | null;
+  durationMs: number | null;
+  truncated: boolean;
+  error: string | null;
+}
+
+/** The connect_error message for a missing or expired access token: refresh it and reconnect. */
+export const SOCKET_UNAUTHORIZED = 'unauthorized';
+
 export interface ServerToClientEvents {
   'presence:update': (payload: { members: RoomMember[] }) => void;
   'chat:new': (message: ChatMessage) => void;
   'chat:typing': (payload: { userId: string; username: string }) => void;
-  'run:started': (payload: { runId: string; by: string; language: string }) => void;
+  /** `by` is the username of whoever pressed Run. */
+  'run:started': (payload: { runId: string; by: string; language: Language }) => void;
   'run:output': (payload: { runId: string; stream: RunStream; chunk: string }) => void;
-  'run:finished': (payload: { runId: string; exitCode: number | null; durationMs: number }) => void;
+  'run:finished': (payload: RunFinishedPayload) => void;
   'rtc:offer': (payload: { from: string; sdp: RTCSessionDescriptionInit }) => void;
   'rtc:answer': (payload: { from: string; sdp: RTCSessionDescriptionInit }) => void;
   'rtc:ice': (payload: { from: string; candidate: RTCIceCandidateInit }) => void;

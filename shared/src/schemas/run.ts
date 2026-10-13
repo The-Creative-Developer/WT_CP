@@ -15,6 +15,14 @@ export function utf8Length(s: string): number {
   return bytes;
 }
 
+const stdinSchema = z
+  .string()
+  .refine(
+    (s) => utf8Length(s) <= MAX_STDIN_BYTES,
+    `Input must be at most ${MAX_STDIN_BYTES / 1024} KB`,
+  )
+  .default('');
+
 export const runRequestSchema = z.object({
   language: z.enum(LANGUAGE_IDS as [Language, ...Language[]]),
   code: z
@@ -23,16 +31,45 @@ export const runRequestSchema = z.object({
       (s) => utf8Length(s) <= MAX_CODE_BYTES,
       `Code must be at most ${MAX_CODE_BYTES / 1024} KB`,
     ),
-  stdin: z
-    .string()
-    .refine(
-      (s) => utf8Length(s) <= MAX_STDIN_BYTES,
-      `Input must be at most ${MAX_STDIN_BYTES / 1024} KB`,
-    )
-    .default(''),
+  stdin: stdinSchema,
 });
 
 export type RunRequest = z.infer<typeof runRequestSchema>;
+
+/**
+ * What the browser sends to POST /api/v1/runs. There is no `code` field on purpose: the API runs the file as the
+ * whole room currently sees it, so the output always matches the shared editor.
+ */
+export const createRunSchema = z.object({
+  roomSlug: z.string().trim().min(1).max(64),
+  fileId: z.string().regex(/^[a-f\d]{24}$/i, 'Not a valid file id'),
+  stdin: stdinSchema,
+});
+
+export type CreateRunInput = z.input<typeof createRunSchema>;
+
+/** queued → running → finished (the program ran, whatever its verdict) or failed (we couldn't run it). */
+export type RunStatus = 'queued' | 'running' | 'finished' | 'failed';
+
+/** A run as returned by POST /runs (202) and GET /runs/:id. */
+export interface RunDto {
+  id: string;
+  roomSlug: string;
+  fileId: string;
+  language: Language;
+  status: RunStatus;
+  by: { id: string; username: string };
+  /** Output so far while running. Stored per stream, so the exact stdout/stderr interleaving is only live. */
+  stdout: string;
+  stderr: string;
+  verdict: RunVerdict | null;
+  exitCode: number | null;
+  durationMs: number | null;
+  truncated: boolean;
+  /** Why the run failed, when status is 'failed'. */
+  error: string | null;
+  createdAt: string;
+}
 
 /** How a run ended, from the user's point of view. */
 export type RunVerdict =

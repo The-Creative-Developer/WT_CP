@@ -5,7 +5,7 @@ import type { AuthService } from '../services/auth';
 import { resolveFileAccess } from '../services/rooms';
 import { HttpError } from '../utils/http-error';
 import { logger } from '../utils/logger';
-import { SharedDoc } from './shared-doc';
+import { SharedDoc, TEXT_NAME } from './shared-doc';
 
 export const COLLAB_PATH = '/yjs';
 
@@ -189,6 +189,23 @@ export function attachCollabServer(server: Server, { auth, allowedOrigins }: Col
   server.on('upgrade', onUpgrade);
 
   return {
+    /**
+     * The text everyone currently sees in a file, straight from the live document. Returns undefined when nobody
+     * has the file open, once any save still in flight has finished, so the copy in MongoDB is up to date.
+     */
+    async liveText(fileId: string): Promise<string | undefined> {
+      const entry = docs.get(fileId);
+      if (!entry) {
+        await pendingFlushes.get(fileId);
+        return undefined;
+      }
+      try {
+        return (await entry.doc).doc.getText(TEXT_NAME).toString();
+      } catch {
+        return undefined; // failed to load; the caller falls back to the saved copy
+      }
+    },
+
     /** Disconnects everyone and saves every open document. Call before closing the database. */
     async close() {
       server.off('upgrade', onUpgrade);
