@@ -1,7 +1,7 @@
 #!/bin/sh
 # Builds the sandbox images used by the runner. Run on any machine with Docker (your laptop or the VM).
 # Usage: sh build.sh            # all languages
-#        sh build.sh node python  # only these (the C++ and Java images are large)
+#        sh build.sh node python  # only these (the C++ and Java images are ~510 MB and ~550 MB)
 set -e
 cd "$(dirname "$0")"
 langs="${*:-node python cpp java}"

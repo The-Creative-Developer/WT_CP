@@ -32,8 +32,8 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
       # The runner's sandbox tests start real containers; without these images they would be skipped.
-      - name: Build sandbox images (Node, Python)
-        run: sh runner/sandboxes/build.sh node python
+      - name: Build sandbox images
+        run: sh runner/sandboxes/build.sh
       - name: Test
         run: npm test
       - name: Build

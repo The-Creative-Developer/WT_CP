@@ -10,7 +10,6 @@ import {
   buildCreateArgs,
   DEFAULT_LIMITS,
   MAX_OUTPUT_BYTES,
-  RUN_TIMEOUT_MS,
   SANDBOX_IMAGES,
   type SandboxLimits,
 } from './sandbox';
@@ -49,14 +48,14 @@ export async function executeRun(
   emit: (event: RunEvent) => void,
   options: ExecuteOptions = {},
 ): Promise<RunResult> {
+  const sandbox = SANDBOX_IMAGES[request.language];
   const {
-    timeoutMs = RUN_TIMEOUT_MS,
+    timeoutMs = sandbox.timeoutMs,
     maxOutputBytes = MAX_OUTPUT_BYTES,
     limits = DEFAULT_LIMITS,
     workDir = tmpdir(),
     signal,
   } = options;
-  const sandbox = SANDBOX_IMAGES[request.language];
   const name = `${CONTAINER_PREFIX}${randomUUID()}`;
   const codeDir = await mkdtemp(join(workDir, CONTAINER_PREFIX));
 

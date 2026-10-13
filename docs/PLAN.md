@@ -413,7 +413,7 @@ devverse/
 | A01 Broken Access Control | A viewer edits code; an outsider joins a private room | Role checks in REST middleware, **Socket.IO middleware** and the **Yjs upgrade handler**; one test per role |
 | A02 Cryptographic Failures | Token or password theft | HTTPS + HSTS (Caddy); argon2; refresh tokens stored as hashes |
 | A03 Injection | **NoSQL operator injection**, XSS in chat/comments, shell injection in the runner | Zod schemas + strip `$`/`.` keys; DOMPurify + strict CSP; code written to a file and mounted into the container, never interpolated into a shell command |
-| A04 Insecure Design | Abuse of the runner (crypto-mining, DoS) | `--network=none --memory=256m --memory-swap=256m --cpus=0.5 --pids-limit=64 --read-only --tmpfs /tmp:size=16m --cap-drop=ALL --security-opt=no-new-privileges --user 1000:1000`; 5 s timeout + `docker kill`; 64 KB output cap; queue concurrency 2; per-user rate limit |
+| A04 Insecure Design | Abuse of the runner (crypto-mining, DoS) | `--network=none --memory=256m --memory-swap=256m --cpus=0.5 --pids-limit=64 --read-only --tmpfs /tmp:size=16m --cap-drop=ALL --security-opt=no-new-privileges --user 1000:1000`; 5 s timeout (8 s for C++ and Java, which compile first) + `docker kill`; 64 KB output cap; queue concurrency 2; per-user rate limit |
 | A05 Security Misconfiguration | Docker socket exposure, open CORS, verbose errors | Only the runner mounts the socket and has no published port; CORS allow-list; generic error messages in production |
 | A06 Vulnerable Components | Supply chain | Lockfile, `npm audit` in CI, Dependabot |
 | A07 Authentication Failures | Credential stuffing, refresh-token replay | Login rate limit; refresh **reuse detection** revokes the whole token family |
