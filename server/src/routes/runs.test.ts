@@ -3,6 +3,7 @@ import request from 'supertest';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../app';
 import { File } from '../models/file';
+import { Room } from '../models/room';
 import { Run, RUN_TTL_SECONDS } from '../models/run';
 import { createAuthService } from '../services/auth';
 import {
@@ -341,6 +342,112 @@ describe('GET /runs/:id', () => {
     expect((await request(app).get('/api/v1/runs/nope').set('Authorization', owner)).status).toBe(
       404,
     );
+  });
+});
+
+describe('GET /runs?room=', () => {
+  const listRuns = (authHeader: string, query: string) =>
+    request(app).get(`/api/v1/runs?${query}`).set('Authorization', authHeader);
+
+  /** Saves a finished run directly, so tests control how old it is. */
+  async function savedRun(slug: string, fileId: string, minutesAgo: number, stdout = '') {
+    const room = await Room.findOne({ slug }).lean();
+    return Run.create({
+      userId: room!.ownerId,
+      roomId: room!._id,
+      fileId,
+      language: 'python',
+      status: 'finished',
+      verdict: 'ok',
+      exitCode: 0,
+      durationMs: 5,
+      stdout,
+      createdAt: new Date(Date.now() - minutesAgo * 60_000),
+    });
+  }
+
+  it('is an empty list for a room that has never run anything', async () => {
+    const { owner, slug } = await setUpRoom();
+    const res = await listRuns(owner, `room=${slug}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it("lists the room's runs newest first, up to the limit, with their authors", async () => {
+    const { owner, slug, fileId } = await setUpRoom();
+    const other = await setUpRoom();
+    await savedRun(slug, fileId, 3, 'oldest');
+    await savedRun(slug, fileId, 1, 'newest');
+    await savedRun(slug, fileId, 2, 'middle');
+    await savedRun(other.slug, other.fileId, 0, 'another room');
+
+    const latest = await listRuns(owner, `room=${slug}&limit=1`);
+    expect(latest.headers['cache-control']).toBe('no-store');
+    expect(latest.body).toEqual([
+      expect.objectContaining({
+        roomSlug: slug,
+        stdout: 'newest',
+        by: { id: expect.any(String), username: expect.stringMatching(/^user\d+$/) },
+      }),
+    ]);
+
+    const all = await listRuns(owner, `room=${slug}`);
+    expect(all.body.map((r: RunDto) => r.stdout)).toEqual(['newest', 'middle', 'oldest']);
+  });
+
+  it('includes output so far for a run that is still going', async () => {
+    const { owner, slug, fileId } = await setUpRoom();
+    const release = deferred();
+    runner.respondWith(async (_req, res, send) => {
+      send({ type: 'output', stream: 'stdout', chunk: 'partial\n' });
+      await release.promise;
+      send({ type: 'finished', verdict: 'ok', exitCode: 0, durationMs: 1, truncated: false });
+      res.end();
+    });
+    const { body } = await startRun(owner, { roomSlug: slug, fileId });
+    await vi.waitFor(async () => {
+      const res = await listRuns(owner, `room=${slug}&limit=1`);
+      expect(res.body).toEqual([
+        expect.objectContaining({ id: body.id, status: 'running', stdout: 'partial\n' }),
+      ]);
+    });
+    release.resolve();
+    await finishedEvent(body.id);
+  });
+
+  it('lets viewers read the list, but not outsiders', async () => {
+    const { slug } = await setUpRoom('public');
+    const viewer = await signUp();
+    await request(app).post(`/api/v1/rooms/${slug}/join`).set('Authorization', viewer).send({});
+    expect((await listRuns(viewer, `room=${slug}`)).status).toBe(200);
+    expect((await listRuns(await signUp(), `room=${slug}`)).status).toBe(403);
+    expect((await listRuns(viewer, 'room=no-such-room')).status).toBe(404);
+  });
+
+  it('validates the query string', async () => {
+    const owner = await signUp();
+    const res = await listRuns(owner, 'limit=50');
+    expect(res.status).toBe(422);
+    expect(Object.keys(res.body.errors).sort()).toEqual(['limit', 'room']);
+    expect((await listRuns(owner, 'room=a&room=b')).status).toBe(422);
+  });
+
+  it('answers from the room index without sorting in memory', async () => {
+    const { slug, fileId } = await setUpRoom();
+    const room = await Room.findOne({ slug }).lean();
+    for (let i = 0; i < 5; i++) await savedRun(slug, fileId, i);
+
+    const explained = (await Run.find({ roomId: room!._id })
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(1)
+      .explain('executionStats')) as unknown as {
+      queryPlanner: { winningPlan: unknown };
+      executionStats: { totalDocsExamined: number };
+    };
+    const plan = JSON.stringify(explained.queryPlanner.winningPlan);
+    expect(plan).toContain('roomId_1_createdAt_-1__id_-1');
+    expect(plan).not.toContain('"SORT"');
+    expect(explained.executionStats.totalDocsExamined).toBe(1);
   });
 });
 

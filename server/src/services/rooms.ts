@@ -46,7 +46,7 @@ function inviteMatches(expected: string, given: string | undefined): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-async function usernamesById(ids: Types.ObjectId[]): Promise<Map<string, string>> {
+export async function usernamesById(ids: Types.ObjectId[]): Promise<Map<string, string>> {
   const users = await User.find({ _id: { $in: ids } }, { username: 1 }).lean();
   return new Map(users.map((u) => [u._id.toString(), u.username]));
 }

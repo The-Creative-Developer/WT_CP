@@ -4,6 +4,7 @@ import {
   MAX_CODE_BYTES,
   utf8Length,
   type CreateRunInput,
+  type ListRunsQuery,
   type Language,
   type RunDto,
   type RunEvent,
@@ -21,7 +22,7 @@ import { User } from '../models/user';
 import { HttpError } from '../utils/http-error';
 import { logger } from '../utils/logger';
 import type { AuthUser } from './auth';
-import { resolveRoomAccess } from './rooms';
+import { resolveRoomAccess, usernamesById } from './rooms';
 
 type RunEventName = 'run:started' | 'run:output' | 'run:finished';
 
@@ -262,10 +263,31 @@ export function createRunService({
     );
   }
 
+  /** A room's runs, newest first. Lets a page that was just opened or reconnected show what it missed. */
+  async function list(user: AuthUser, { room, limit }: ListRunsQuery): Promise<RunDto[]> {
+    const access = await resolveRoomAccess(user.id, { slug: room });
+    const runs = await Run.find({ roomId: access.roomId })
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(limit)
+      .lean();
+    // One query for every author, rather than one per run.
+    const names = await usernamesById(runs.map((run) => run.userId));
+    return runs.map((run) => {
+      const id = run.userId.toString();
+      return toDto(
+        run,
+        access.slug,
+        { id, username: names.get(id) ?? 'deleted user' },
+        active.get(run._id.toString()),
+      );
+    });
+  }
+
   return {
     maxRunsPerMinute,
     start,
     get,
+    list,
 
     /** Receives every run event; returns an unsubscribe function. */
     subscribe(listener: (broadcast: RunBroadcast) => void) {

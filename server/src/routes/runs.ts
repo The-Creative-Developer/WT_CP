@@ -1,9 +1,9 @@
-import { createRunSchema } from '@devverse/shared';
+import { createRunSchema, listRunsQuerySchema } from '@devverse/shared';
 import { Router, type RequestHandler } from 'express';
 import rateLimit from 'express-rate-limit';
 import { createRunsController } from '../controllers/runs';
 import { currentUser } from '../middleware/auth';
-import { validateBody } from '../middleware/validate';
+import { validateBody, validateQuery } from '../middleware/validate';
 import type { RunService } from '../services/runs';
 import { HttpError } from '../utils/http-error';
 
@@ -25,6 +25,7 @@ export function createRunsRouter(authenticate: RequestHandler, runs: RunService)
   });
 
   router.post('/', runLimit, validateBody(createRunSchema), controller.start);
+  router.get('/', validateQuery(listRunsQuerySchema), controller.list);
   router.get('/:id', controller.get);
 
   return router;

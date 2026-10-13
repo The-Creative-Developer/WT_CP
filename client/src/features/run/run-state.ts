@@ -55,6 +55,13 @@ export function fromDto(run: RunDto): RunView {
   };
 }
 
+/**
+ * [CONCEPT: ObjectId Timestamps] A MongoDB ObjectId starts with its creation time in seconds, followed by a value
+ * fixed per server process and an incrementing counter. With our single API process, a run created later always
+ * has a larger id, and same-length hex strings compare like the numbers they encode.
+ */
+export const startedLater = (a: string, b: string) => a > b;
+
 const outputLength = (run: RunView) => run.output.reduce((n, c) => n + c.text.length, 0);
 
 function emptyRun(id: string, by: string | null): RunView {
@@ -112,7 +119,10 @@ export function runReducer(run: RunView | null, action: RunAction): RunView | nu
     }
 
     case 'synced': {
-      if (run && run.id !== action.run.id) return run;
+      // A different run: show whichever started later (e.g. one somebody began while we were offline).
+      if (run && run.id !== action.run.id) {
+        return startedLater(action.run.id, run.id) ? fromDto(action.run) : run;
+      }
       const snapshot = fromDto(action.run);
       if (!run || !isActive(snapshot)) return snapshot;
       // A late answer from before the run finished must not bring it back to life.

@@ -1,6 +1,7 @@
-import type { CreateRunInput } from '@devverse/shared';
+import type { CreateRunInput, ListRunsQuery } from '@devverse/shared';
 import type { RequestHandler } from 'express';
 import { currentUser } from '../middleware/auth';
+import { validQuery } from '../middleware/validate';
 import type { RunService } from '../services/runs';
 
 export function createRunsController(runs: RunService) {
@@ -16,5 +17,10 @@ export function createRunsController(runs: RunService) {
     res.set('Cache-Control', 'no-store').json(await runs.get(currentUser(req), req.params.id));
   };
 
-  return { start, get };
+  const list: RequestHandler = async (req, res) => {
+    const query = validQuery<ListRunsQuery>(res);
+    res.set('Cache-Control', 'no-store').json(await runs.list(currentUser(req), query));
+  };
+
+  return { start, get, list };
 }
