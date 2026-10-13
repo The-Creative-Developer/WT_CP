@@ -46,11 +46,15 @@ npm run dev          # API on :4000, client on :5173
 
 Open http://localhost:5173. The footer shows whether the API and database are reachable.
 
-To build the code-execution sandbox images (needed from Week 1, Day 6):
+To build the code-execution sandbox images (needed to run code):
 
 ```bash
-npm run sandboxes:build -w runner
+npm run sandboxes:build -w runner -- node python
 ```
+
+Leave off `-- node python` to also build the C++ and Java images. They are much bigger (about 1.4 GB and 400 MB). The
+runner's `/healthz` lists which images are built, and its tests that start real containers are skipped until the Node
+and Python images exist.
 
 ## Scripts
 

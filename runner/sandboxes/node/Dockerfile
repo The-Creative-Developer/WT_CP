@@ -1,3 +1,3 @@
 FROM node:24-alpine
-RUN addgroup -S -g 1000 sandbox 2>/dev/null || true; adduser -S -u 1000 -G sandbox sandbox 2>/dev/null || true
+# The official image already has an unprivileged "node" user with uid/gid 1000; run as it.
 USER 1000:1000

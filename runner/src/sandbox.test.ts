@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildDockerArgs } from './sandbox';
+import { buildCreateArgs } from './sandbox';
 
-describe('buildDockerArgs', () => {
-  const args = buildDockerArgs('python', '/tmp/run-123', 'run-123');
+describe('buildCreateArgs', () => {
+  const args = buildCreateArgs('python', '/tmp/run-123', 'run-123');
 
   it.each([
     '--network=none',
@@ -13,8 +13,16 @@ describe('buildDockerArgs', () => {
     '--pids-limit=64',
     '--memory=256m',
     '--memory-swap=256m',
+    '--pull=never',
+    '--init',
+    '--ulimit=nofile=256:256',
   ])('includes hardening flag %s', (flag) => {
     expect(args).toContain(flag);
+  });
+
+  it('creates (not runs) the container, without --rm', () => {
+    expect(args[0]).toBe('create');
+    expect(args).not.toContain('--rm');
   });
 
   it('mounts the code read-only', () => {
