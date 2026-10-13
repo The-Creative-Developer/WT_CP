@@ -4,3 +4,5 @@ coverage
 package-lock.json
 docs/PLAN.md
 docs/CONCEPTS.md
+# Claude Code's local files, including other sessions' git worktrees (full copies of the repo)
+.claude/
