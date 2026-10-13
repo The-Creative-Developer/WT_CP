@@ -60,15 +60,16 @@ Runs are killed after 5 seconds; C++ and Java get 3 more, because they compile f
 
 ## Scripts
 
-| Command                           | What it does                                                              |
-| --------------------------------- | ------------------------------------------------------------------------- |
-| `npm run dev`                     | Server + client with hot reload                                           |
-| `npm run dev:all`                 | Also starts the runner                                                    |
-| `npm test`                        | Vitest suites in every workspace                                          |
-| `npm run lint` / `npm run format` | ESLint / Prettier                                                         |
-| `npm run typecheck`               | TypeScript across all workspaces                                          |
-| `npm run build`                   | Production builds                                                         |
-| `npm run concepts`                | Regenerates [docs/CONCEPTS.md](docs/CONCEPTS.md) from `[CONCEPT: …]` tags |
+| Command                           | What it does                                                                           |
+| --------------------------------- | -------------------------------------------------------------------------------------- |
+| `npm run dev`                     | Server + client with hot reload                                                        |
+| `npm run dev:all`                 | Also starts the runner                                                                 |
+| `npm test`                        | Vitest suites in every workspace                                                       |
+| `npm run lint` / `npm run format` | ESLint / Prettier                                                                      |
+| `npm run typecheck`               | TypeScript across all workspaces                                                       |
+| `npm run build`                   | Production builds                                                                      |
+| `npm run concepts`                | Regenerates [docs/CONCEPTS.md](docs/CONCEPTS.md) from `[CONCEPT: …]` tags              |
+| `npm run seed:demo`               | Demo accounts and a room per language (needs the API running; password in `.env.demo`) |
 
 ## Documenting web concepts
 
