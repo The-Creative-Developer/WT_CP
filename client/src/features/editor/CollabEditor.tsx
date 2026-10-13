@@ -1,11 +1,10 @@
-import { LANGUAGES, type Language } from '@devverse/shared';
+import { colorFor, LANGUAGES, type Language } from '@devverse/shared';
 import { useEffect, useRef, useState } from 'react';
 import { MonacoBinding } from 'y-monaco';
 import { WebsocketProvider } from 'y-websocket';
 import * as Y from 'yjs';
 import { useEffectiveTheme } from '../../hooks/useEffectiveTheme';
 import { getAccessToken, refreshSession } from '../../lib/api';
-import { colorFor } from '../../lib/color';
 import { monaco } from './monaco';
 
 /** Must match TEXT_NAME on the server. */
@@ -31,6 +30,8 @@ export interface CollabEditorProps {
   language: Language;
   readOnly: boolean;
   username: string;
+  /** Bound to Ctrl/⌘+Enter inside the editor. */
+  onRun?: () => void;
 }
 
 function collabUrl(): string {
@@ -47,8 +48,14 @@ export default function CollabEditor({
   language,
   readOnly,
   username,
+  onRun,
 }: CollabEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // Read through a ref so a new callback doesn't tear down and rebuild the whole editor.
+  const onRunRef = useRef(onRun);
+  useEffect(() => {
+    onRunRef.current = onRun;
+  }, [onRun]);
   const theme = useEffectiveTheme();
   const [connection, setConnection] = useState<Connection>({ state: 'connecting' });
 
@@ -80,6 +87,9 @@ export default function CollabEditor({
       scrollBeyondLastLine: false,
       ariaLabel: `${path}, code editor${readOnly ? ', read only' : ''}`,
     });
+    // [CONCEPT: Keyboard Shortcuts] Monaco handles keys before the page sees them, so the room's Ctrl/⌘+Enter has to
+    // be registered with the editor too. CtrlCmd means ⌘ on a Mac and Ctrl elsewhere.
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => onRunRef.current?.());
     // [CONCEPT: Data Binding] Keeps the Monaco model and the shared Y.Text in step, in both directions.
     const binding = new MonacoBinding(
       doc.getText(TEXT_NAME),

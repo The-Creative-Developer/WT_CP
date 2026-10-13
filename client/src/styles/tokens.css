@@ -55,3 +55,28 @@
   --shadow-md: 0 4px 16px rgb(0 0 0 / 0.4);
   color-scheme: dark;
 }
+
+/* The run output panel looks like a terminal in both themes, so these don't change with the theme. Based on
+   GitHub's dark terminal palette, with "black" lifted to grey so it stays readable on the dark background. */
+:root {
+  --terminal-bg: #0d1117;
+  --terminal-fg: #e6edf3;
+  --terminal-muted: #8b949e;
+  --terminal-stderr: #ffa198;
+  --ansi-0: #8b949e;
+  --ansi-1: #ff7b72;
+  --ansi-2: #3fb950;
+  --ansi-3: #d29922;
+  --ansi-4: #58a6ff;
+  --ansi-5: #bc8cff;
+  --ansi-6: #39c5cf;
+  --ansi-7: #b1bac4;
+  --ansi-8: #6e7681;
+  --ansi-9: #ffa198;
+  --ansi-10: #56d364;
+  --ansi-11: #e3b341;
+  --ansi-12: #79c0ff;
+  --ansi-13: #d2a8ff;
+  --ansi-14: #56d4dd;
+  --ansi-15: #ffffff;
+}

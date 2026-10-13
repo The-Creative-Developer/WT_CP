@@ -13,6 +13,10 @@
   --color-accent-contrast: var(--color-accent-contrast);
   --color-danger: var(--color-danger);
   --color-success: var(--color-success);
+  --color-terminal: var(--terminal-bg);
+  --color-terminal-fg: var(--terminal-fg);
+  --color-terminal-muted: var(--terminal-muted);
+  --color-terminal-stderr: var(--terminal-stderr);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
 }
