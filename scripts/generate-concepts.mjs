@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 // fileURLToPath, not .pathname: the latter keeps spaces as %20 and breaks in folders like "Kingston XS2000 (APFS)".
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SCAN_DIRS = ['client', 'server', 'runner', 'shared'];
-const EXTENSIONS = /\.(ts|tsx|js|mjs|css|html)$/;
+// Source files, plus the sandbox Dockerfiles (their tags use # comments, which TAG matches too).
+const EXTENSIONS = /(\.(ts|tsx|js|mjs|css|html)|^Dockerfile)$/;
 const SKIP = new Set(['node_modules', 'dist', 'coverage']);
 const TAG = /\[CONCEPT:\s*([^\]]+)\]\s*(.*?)\s*(?:\*\/|-->|\}\s*$|$)/;
 

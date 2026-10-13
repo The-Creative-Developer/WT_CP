@@ -52,9 +52,11 @@ To build the code-execution sandbox images (needed to run code):
 npm run sandboxes:build -w runner -- node python
 ```
 
-Leave off `-- node python` to also build the C++ and Java images. They are much bigger (about 1.4 GB and 400 MB). The
-runner's `/healthz` lists which images are built, and its tests that start real containers are skipped until the Node
-and Python images exist.
+Leave off `-- node python` to also build the C++ and Java images. They are bigger (about 510 MB and 550 MB). The
+runner's `/healthz` lists which images are built, and its tests that start real containers are skipped until the
+images they need exist.
+
+Runs are killed after 5 seconds; C++ and Java get 3 more, because they compile first.
 
 ## Scripts
 
