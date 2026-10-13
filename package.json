@@ -2,7 +2,7 @@
   "name": "devverse",
   "version": "0.1.0",
   "private": true,
-  "description": "DevVerse — a multiplayer coding world: collaborative editor, voice/video, sandboxed code execution, AI assistant, challenges and portfolios.",
+  "description": "DevVerse \u2014 a multiplayer coding world: collaborative editor, voice/video, sandboxed code execution, AI assistant, challenges and portfolios.",
   "type": "module",
   "workspaces": [
     "shared",
@@ -23,6 +23,7 @@
     "format:check": "prettier --check .",
     "test": "npm run test --workspaces --if-present",
     "concepts": "node scripts/generate-concepts.mjs",
+    "seed:demo": "node scripts/seed-demo.mjs",
     "db:up": "docker compose up -d mongo",
     "db:down": "docker compose down",
     "prepare": "husky"
