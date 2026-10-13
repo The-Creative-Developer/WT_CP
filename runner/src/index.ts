@@ -1,39 +1,25 @@
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { timingSafeEqual } from 'node:crypto';
+import { availableImages, executeRun, removeLeftoverContainers } from './execute';
+import { createRunnerServer } from './server';
 
 const PORT = Number(process.env.PORT ?? 5050);
 const TOKEN = process.env.RUNNER_TOKEN ?? '';
+const MAX_CONCURRENT_RUNS = Number(process.env.MAX_CONCURRENT_RUNS ?? 2);
 
 if (TOKEN.length < 8) {
   console.error('RUNNER_TOKEN must be set (min 8 chars). Copy runner/.env.example to runner/.env.');
   process.exit(1);
 }
 
-function isAuthorised(req: IncomingMessage): boolean {
-  const header = req.headers.authorization ?? '';
-  const expected = Buffer.from(`Bearer ${TOKEN}`);
-  const actual = Buffer.from(header);
-  // [CONCEPT: Timing-Safe Comparison] Prevents guessing the token one character at a time from response timing.
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
-}
-
-function json(res: ServerResponse, status: number, body: unknown) {
-  res.writeHead(status, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(body));
-}
-
-// The runner is only reachable on the internal Docker network; the API calls it with a shared token.
-const server = createServer((req, res) => {
-  if (req.method === 'GET' && req.url === '/healthz') return json(res, 200, { status: 'ok' });
-  if (!isAuthorised(req)) return json(res, 401, { error: 'Unauthorised' });
-
-  if (req.method === 'POST' && req.url === '/runs') {
-    // Week 1, Days 6–7: write code to a temp dir, spawn `docker` with buildDockerArgs(),
-    // stream stdout/stderr back as chunked NDJSON, kill the container after RUN_TIMEOUT_MS.
-    return json(res, 501, { error: 'Not implemented yet' });
-  }
-
-  json(res, 404, { error: 'Not found' });
+const server = createRunnerServer({
+  token: TOKEN,
+  maxConcurrent: MAX_CONCURRENT_RUNS,
+  execute: executeRun,
+  workDir: process.env.RUNS_DIR || undefined,
+  listImages: availableImages,
 });
+
+removeLeftoverContainers()
+  .then((count) => count > 0 && console.log(`Removed ${count} leftover sandbox container(s)`))
+  .catch(() => console.warn('Docker is not reachable yet; runs will fail until it is.'));
 
 server.listen(PORT, () => console.log(`Runner listening on http://localhost:${PORT}`));
