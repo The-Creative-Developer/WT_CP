@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { createRunSchema, MAX_CODE_BYTES, runRequestSchema, utf8Length } from './schemas/run';
+import {
+  createRunSchema,
+  listRunsQuerySchema,
+  MAX_CODE_BYTES,
+  runRequestSchema,
+  utf8Length,
+} from './schemas/run';
 
 describe('utf8Length', () => {
   it.each([
@@ -37,5 +43,20 @@ describe('createRunSchema', () => {
   it('rejects ids that could carry a query operator', () => {
     expect(createRunSchema.safeParse({ roomSlug: 'r', fileId: { $ne: null } }).success).toBe(false);
     expect(createRunSchema.safeParse({ roomSlug: 'r', fileId: 'abc' }).success).toBe(false);
+  });
+});
+
+describe('listRunsQuerySchema', () => {
+  it('reads limit from the query string and defaults it to 10', () => {
+    expect(listRunsQuerySchema.parse({ room: 'r', limit: '1' })).toEqual({ room: 'r', limit: 1 });
+    expect(listRunsQuerySchema.parse({ room: 'r' }).limit).toBe(10);
+  });
+
+  it.each([['0'], ['21'], ['1.5'], ['abc']])('rejects limit=%s', (limit) => {
+    expect(listRunsQuerySchema.safeParse({ room: 'r', limit }).success).toBe(false);
+  });
+
+  it('rejects a repeated room parameter, which arrives as an array', () => {
+    expect(listRunsQuerySchema.safeParse({ room: ['a', 'b'] }).success).toBe(false);
   });
 });

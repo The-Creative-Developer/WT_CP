@@ -48,6 +48,17 @@ export const createRunSchema = z.object({
 
 export type CreateRunInput = z.input<typeof createRunSchema>;
 
+export const MAX_RUNS_PER_PAGE = 20;
+
+/** GET /api/v1/runs?room=<slug>&limit=<n>: a room's runs, newest first. */
+export const listRunsQuerySchema = z.object({
+  room: z.string().trim().min(1).max(64),
+  // Query string values are always strings; coerce turns "1" into 1 before the range check.
+  limit: z.coerce.number().int().min(1).max(MAX_RUNS_PER_PAGE).default(10),
+});
+
+export type ListRunsQuery = z.infer<typeof listRunsQuerySchema>;
+
 /** queued → running → finished (the program ran, whatever its verdict) or failed (we couldn't run it). */
 export type RunStatus = 'queued' | 'running' | 'finished' | 'failed';
 

@@ -44,6 +44,10 @@ const runSchema = new Schema<RunAttrs>(
 
 // "My recent runs", newest first.
 runSchema.index({ userId: 1, createdAt: -1 });
+// [CONCEPT: Compound Index] "This room's latest runs": equality on roomId, then already in newest-first order, so
+// MongoDB reads just the first `limit` entries instead of scanning and sorting every run. _id breaks ties between
+// runs created in the same millisecond.
+runSchema.index({ roomId: 1, createdAt: -1, _id: -1 });
 // [CONCEPT: TTL Index] Run output is only useful for a while; MongoDB deletes each run 7 days after it was created.
 runSchema.index({ createdAt: 1 }, { expireAfterSeconds: RUN_TTL_SECONDS });
 

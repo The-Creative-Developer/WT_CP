@@ -1,6 +1,6 @@
 import type { RunDto, ServerToClientEvents } from '@devverse/shared';
 import { useMutation } from '@tanstack/react-query';
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useState } from 'react';
 import { api, ApiError } from '../../lib/api';
 import { useSocket } from '../../lib/socket';
 import { isActive, runReducer } from './run-state';
@@ -16,16 +16,31 @@ export function useRoomRun(slug: string, username: string) {
 
   // Join the room's channel now and after every reconnect (the server forgets a socket's rooms when it drops).
   useEffect(() => {
+    let cancelled = false;
+    // The room's latest run, so a page that was just opened or reconnected shows what it missed.
+    const syncLatest = () =>
+      api<RunDto[]>(`/api/v1/runs?room=${encodeURIComponent(slug)}&limit=1`)
+        .then(([latest]) => !cancelled && latest && dispatch({ type: 'synced', run: latest }))
+        .catch(() => undefined); // the panel just starts empty
+
     const join = () => {
       socket
         .timeout(5_000)
         .emitWithAck('room:join', { slug })
-        .then((res) => setLiveError(res.ok ? null : res.error))
+        .then((res) => {
+          setLiveError(res.ok ? null : res.error);
+          // Fetched only once joined: every event from now on reaches us, and the fetch covers everything before,
+          // so nothing falls through the gap between the two.
+          if (res.ok) void syncLatest();
+        })
         .catch(() => setLiveError('Live output is unavailable right now'));
     };
     socket.on('connect', join);
     if (socket.connected) join();
+    // Don't wait for the socket to show the last run; the post-join fetch fills any gap.
+    else void syncLatest();
     return () => {
+      cancelled = true;
       socket.off('connect', join);
       if (socket.connected) socket.emit('room:leave', { slug });
     };
@@ -57,26 +72,17 @@ export function useRoomRun(slug: string, username: string) {
     onSuccess: (accepted) => dispatch({ type: 'accepted', run: accepted }),
   });
 
-  // [CONCEPT: Polling Fallback] While the socket is down, ask for the run's state every second instead. After it
-  // comes back, fetch once more to catch up on anything sent while we were away.
+  // [CONCEPT: Polling Fallback] While the socket is down, ask for the run's state every second instead. Once it is
+  // back, rejoining the room fetches the latest run (above), which catches up on anything sent while we were away.
   const runId = run?.id;
   const active = isActive(run);
-  const missedEvents = useRef(false);
   useEffect(() => {
-    if (!runId) return;
+    if (!runId || !active || connected) return;
     let cancelled = false;
     const sync = () =>
       api<RunDto>(`/api/v1/runs/${runId}`)
         .then((snapshot) => !cancelled && dispatch({ type: 'synced', run: snapshot }))
         .catch(() => undefined); // the next tick (or the socket) will try again
-
-    if (connected) {
-      if (missedEvents.current) void sync();
-      missedEvents.current = false;
-      return;
-    }
-    if (!active) return;
-    missedEvents.current = true;
     void sync();
     const timer = setInterval(sync, POLL_INTERVAL_MS);
     return () => {

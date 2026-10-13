@@ -93,6 +93,30 @@ describe('runReducer', () => {
     expect(run).toMatchObject({ status: 'failed', error: 'Boom' });
   });
 
+  describe('the latest run, fetched after joining', () => {
+    // Real ObjectIds made a minute apart.
+    const earlier = '6acdda0960e165143a5daa68';
+    const later = '6acdda4f60e165143a5daa6b';
+
+    it('shows the latest run when the panel is empty', () => {
+      expect(
+        runReducer(null, { type: 'synced', run: dto({ id: later, status: 'finished' }) }),
+      ).toMatchObject({ id: later, status: 'finished', by: 'alice' });
+    });
+
+    it('replaces an older run, e.g. one somebody started while we were offline', () => {
+      const old = reduce([{ type: 'accepted', run: dto({ id: earlier, status: 'finished' }) }]);
+      expect(runReducer(old, { type: 'synced', run: dto({ id: later }) })).toMatchObject({
+        id: later,
+      });
+    });
+
+    it('keeps a newer run that arrived over the socket while the fetch was in flight', () => {
+      const live = reduce([{ type: 'started', runId: later, by: 'bob' }]);
+      expect(runReducer(live, { type: 'synced', run: dto({ id: earlier }) })).toBe(live);
+    });
+  });
+
   describe('polling snapshots', () => {
     it('replace the run while it is active and they have more output', () => {
       const run = reduce([{ type: 'started', runId: 'r1', by: 'alice' }]);
