@@ -5,7 +5,16 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['**/dist', '**/coverage', '**/node_modules', 'docs/**'] },
+  {
+    ignores: [
+      '**/dist',
+      '**/coverage',
+      '**/node_modules',
+      'docs/**',
+      // Claude Code's local files, including other sessions' git worktrees (full copies of the repo).
+      '.claude/**',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
