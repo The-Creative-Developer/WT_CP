@@ -5,6 +5,7 @@ import { createApp } from '../app';
 import { File } from '../models/file';
 import { Project } from '../models/project';
 import { Room } from '../models/room';
+import { Run } from '../models/run';
 import { makeSlug } from '../services/rooms';
 import { testEnv, useTestDatabase } from '../test/helpers';
 
@@ -186,5 +187,30 @@ describe('DELETE /rooms/:slug', () => {
     expect(await Room.countDocuments()).toBe(0);
     expect(await Project.countDocuments()).toBe(0);
     expect(await File.countDocuments()).toBe(0);
+  });
+
+  it("removes the room's runs but leaves other rooms' runs alone", async () => {
+    const alice = await signUp('alice');
+    const doomed: RoomDetail = (await createRoom(alice)).body;
+    const kept: RoomDetail = (await createRoom(alice, { name: 'Keep Me' })).body;
+    const addRun = async ({ slug, files }: RoomDetail) => {
+      const room = await Room.findOne({ slug }).orFail();
+      return Run.create({
+        userId: room.ownerId,
+        roomId: room._id,
+        fileId: files[0]!.id,
+        language: room.language,
+      });
+    };
+    await addRun(doomed);
+    await addRun(doomed);
+    const survivor = await addRun(kept);
+
+    const res = await request(app)
+      .delete(`/api/v1/rooms/${doomed.slug}`)
+      .set('Authorization', alice);
+    expect(res.status).toBe(204);
+    const left = await Run.find().lean();
+    expect(left.map((run) => run._id.toString())).toEqual([survivor.id]);
   });
 });
