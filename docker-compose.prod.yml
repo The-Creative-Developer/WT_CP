@@ -1,0 +1,89 @@
+# Production stack for the VM (PLAN §4, option B). See docs/deployment.md. Start or update with:
+#   docker compose -f docker-compose.prod.yml --env-file deploy/.env up -d --build
+#
+# Settings and secrets come from deploy/.env (copy deploy/.env.example). Each service gets only the variables it
+# needs: the runner never sees the database address or the JWT secrets.
+
+# Its own project name, so it never mixes with the local dev stack (docker-compose.yml) in the same folder.
+name: devverse-prod
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp' # HTTP/3
+    environment:
+      PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL in deploy/.env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data # certificates: keep them, or Let's Encrypt rate limits bite after a few rebuilds
+      - caddy-config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [public]
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      MONGODB_URI: ${MONGODB_URI:?set MONGODB_URI in deploy/.env}
+      # One origin for the SPA and the API, so it is the only one allowed (CORS, Socket.IO and Yjs Origin checks).
+      CORS_ORIGINS: ${PUBLIC_URL}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET in deploy/.env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set JWT_REFRESH_SECRET in deploy/.env}
+      RUNNER_URL: http://runner:5050
+      RUNNER_TOKEN: ${RUNNER_TOKEN:?set RUNNER_TOKEN in deploy/.env}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:4000/healthz').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    # public: reachable by Caddy and able to reach MongoDB Atlas. internal: reaches the runner.
+    networks: [public, internal]
+    restart: unless-stopped
+
+  runner:
+    build:
+      context: .
+      dockerfile: runner/Dockerfile
+    environment:
+      PORT: 5050
+      RUNNER_TOKEN: ${RUNNER_TOKEN}
+      MAX_CONCURRENT_RUNS: 2
+      # The runner writes each program here, then the host's Docker mounts it into a sandbox. Docker resolves that
+      # mount path on the host, so the folder must have the same path inside and outside this container.
+      RUNS_DIR: ${RUNS_DIR:-/var/lib/devverse/runs}
+    volumes:
+      # [CONCEPT: Docker Socket] Control of the host's Docker, needed to start sandboxes. Equivalent to root on the
+      # host, so only this container has it: no published port, and only the API can reach it.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${RUNS_DIR:-/var/lib/devverse/runs}:${RUNS_DIR:-/var/lib/devverse/runs}
+    networks: [internal]
+    restart: unless-stopped
+
+networks:
+  public: {}
+  # No route to the internet or the host's network: only containers on it can talk to each other.
+  internal:
+    internal: true
+
+volumes:
+  caddy-data: {}
+  caddy-config: {}

@@ -38,3 +38,19 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+
+  # Builds the production images (docs/deployment.md), so a broken Dockerfile is caught here rather than on the VM.
+  # Runs alongside `verify`; nothing is pushed anywhere.
+  images:
+    runs-on: ubuntu-latest
+    env:
+      # Placeholders: docker-compose.prod.yml refuses to load without them, but building doesn't use them.
+      PUBLIC_URL: https://ci.invalid
+      MONGODB_URI: mongodb://ci.invalid/devverse
+      JWT_ACCESS_SECRET: ci-placeholder
+      JWT_REFRESH_SECRET: ci-placeholder
+      RUNNER_TOKEN: ci-placeholder
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production images
+        run: docker compose -f docker-compose.prod.yml build
