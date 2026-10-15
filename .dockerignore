@@ -1,0 +1,13 @@
+# Keep the Docker build context small and free of secrets. Images install their own node_modules.
+**/node_modules
+**/dist
+**/coverage
+.git
+.claude
+.husky
+docs
+**/.env
+**/.env.*
+!**/.env.example
+*.log
+.DS_Store

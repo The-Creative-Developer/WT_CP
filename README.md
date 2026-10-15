@@ -85,5 +85,6 @@ Wherever you implement a web-development concept, tag it in a comment:
 
 - [Execution plan](docs/PLAN.md)
 - [Architecture decision records](docs/adr/)
+- [Deployment](docs/deployment.md)
 - [Concepts index](docs/CONCEPTS.md)
 - [Contributing](CONTRIBUTING.md)

@@ -1,0 +1,37 @@
+# Caddy: HTTPS, the single-page app, and a reverse proxy to the API, all on one host (PLAN §4, option B).
+# PUBLIC_URL is e.g. https://devverse.203-0-113-7.sslip.io. With an https:// address, Caddy gets and renews a
+# Let's Encrypt certificate by itself.
+#
+# No access log on purpose: the Yjs WebSocket URL carries the access token in its query string.
+
+{$PUBLIC_URL} {
+	encode zstd gzip
+
+	# The API and its WebSockets (Socket.IO and Yjs). Caddy passes WebSocket upgrades through on its own.
+	# /u/*, /sitemap.xml and /robots.txt are for the server-rendered portfolios (Week 3).
+	@api path /api/* /socket.io/* /yjs/* /healthz /u/* /sitemap.xml /robots.txt
+	handle @api {
+		reverse_proxy api:4000
+	}
+
+	# Everything else is the single-page app. An unknown path such as /rooms/abc gets index.html, so client-side
+	# routes work on reload.
+	handle {
+		root * /srv
+		# Vite puts a content hash in every file name under /assets, so they can be cached forever.
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		@notAssets not path /assets/*
+		header @notAssets Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		# [CONCEPT: HSTS] After one HTTPS visit, browsers refuse plain HTTP for this host for a year.
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}
