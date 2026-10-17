@@ -3,7 +3,9 @@ import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState } from 
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useAuth } from '../features/auth/AuthContext';
+import { MembersList } from '../features/rooms/MembersList';
 import { useDeleteRoom, useJoinRoom, useRoom } from '../features/rooms/queries';
+import { useRoomChannel } from '../features/rooms/useRoomChannel';
 import { RunPanel } from '../features/run/RunPanel';
 import { useRoomRun, useRunShortcut } from '../features/run/useRoomRun';
 import { ApiError } from '../lib/api';
@@ -107,9 +109,11 @@ function JoinPrompt({ slug, invite, room }: { slug: string; invite?: string; roo
 function RoomView({ room }: { room: RoomDetail }) {
   const { state } = useAuth();
   const username = state.status === 'authenticated' ? state.user.username : 'anonymous';
+  const myId = state.status === 'authenticated' ? state.user.id : undefined;
   // One file per room for now; Week 2 adds a file tree and tabs.
   const file = room.files[0];
-  const runner = useRoomRun(room.slug, username);
+  const channel = useRoomChannel(room.slug);
+  const runner = useRoomRun(room.slug, username, channel);
   const canRun = room.role !== 'viewer' && !!file;
   const { runFile, busy } = runner;
   const fileId = file?.id;
@@ -193,19 +197,12 @@ function RoomView({ room }: { room: RoomDetail }) {
         </div>
 
         <aside aria-label="Room details" className="flex flex-col gap-6">
-          <section aria-labelledby="members-title">
-            <h2 id="members-title" className="font-semibold">
-              Members ({room.memberCount})
-            </h2>
-            <ul className="mt-2 flex flex-col gap-1 text-sm">
-              {room.members.map((member) => (
-                <li key={member.id} className="flex justify-between gap-2">
-                  <span>@{member.username}</span>
-                  <span className="capitalize text-muted">{member.role}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
+          <MembersList
+            members={room.members}
+            present={channel.present}
+            connected={channel.connected}
+            myId={myId}
+          />
           {room.inviteCode && <InviteLink slug={room.slug} code={room.inviteCode} />}
           {room.role === 'owner' && <DeleteRoom room={room} />}
         </aside>

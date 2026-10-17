@@ -2,49 +2,29 @@ import type { RunDto, ServerToClientEvents } from '@devverse/shared';
 import { useMutation } from '@tanstack/react-query';
 import { useCallback, useEffect, useReducer, useState } from 'react';
 import { api, ApiError } from '../../lib/api';
-import { useSocket } from '../../lib/socket';
+import type { RoomChannel } from '../rooms/useRoomChannel';
 import { isActive, runReducer } from './run-state';
 
 const POLL_INTERVAL_MS = 1_000;
 
-/** The room's latest run, live over Socket.IO, and a way to start a new one. */
-export function useRoomRun(slug: string, username: string) {
-  const { socket, connected } = useSocket();
+/** The room's latest run, live over the room's channel, and a way to start a new one. */
+export function useRoomRun(slug: string, username: string, channel: RoomChannel) {
+  const { socket, connected, joins } = channel;
   const [run, dispatch] = useReducer(runReducer, null);
   const [stdin, setStdin] = useState('');
-  const [liveError, setLiveError] = useState<string | null>(null);
 
-  // Join the room's channel now and after every reconnect (the server forgets a socket's rooms when it drops).
+  // The room's latest run, so a page that was just opened or reconnected shows what it missed. Fetched straight
+  // away, so the panel doesn't wait for the socket, and again after every (re)join: from a join on, every event
+  // reaches us, and the fetch covers everything before it, so nothing falls through the gap.
   useEffect(() => {
     let cancelled = false;
-    // The room's latest run, so a page that was just opened or reconnected shows what it missed.
-    const syncLatest = () =>
-      api<RunDto[]>(`/api/v1/runs?room=${encodeURIComponent(slug)}&limit=1`)
-        .then(([latest]) => !cancelled && latest && dispatch({ type: 'synced', run: latest }))
-        .catch(() => undefined); // the panel just starts empty
-
-    const join = () => {
-      socket
-        .timeout(5_000)
-        .emitWithAck('room:join', { slug })
-        .then((res) => {
-          setLiveError(res.ok ? null : res.error);
-          // Fetched only once joined: every event from now on reaches us, and the fetch covers everything before,
-          // so nothing falls through the gap between the two.
-          if (res.ok) void syncLatest();
-        })
-        .catch(() => setLiveError('Live output is unavailable right now'));
-    };
-    socket.on('connect', join);
-    if (socket.connected) join();
-    // Don't wait for the socket to show the last run; the post-join fetch fills any gap.
-    else void syncLatest();
+    api<RunDto[]>(`/api/v1/runs?room=${encodeURIComponent(slug)}&limit=1`)
+      .then(([latest]) => !cancelled && latest && dispatch({ type: 'synced', run: latest }))
+      .catch(() => undefined); // the panel just starts empty
     return () => {
       cancelled = true;
-      socket.off('connect', join);
-      if (socket.connected) socket.emit('room:leave', { slug });
     };
-  }, [socket, slug]);
+  }, [slug, joins]);
 
   useEffect(() => {
     const onStarted: ServerToClientEvents['run:started'] = ({ runId, by }) =>
@@ -107,7 +87,7 @@ export function useRoomRun(slug: string, username: string) {
     stdin,
     setStdin,
     connected,
-    liveError,
+    liveError: channel.error,
   };
 }
 

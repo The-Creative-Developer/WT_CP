@@ -44,8 +44,9 @@ body {
   }
 }
 
-/* Other people's selections and carets in the shared editor (classes added by y-monaco).
-   Week 2 colours them per person and adds name labels. */
+/* Other people's selections and carets in the shared editor (classes added by y-monaco). Each person's colour and name
+   label come from per-person rules built in features/editor/remote-cursors.ts; these are the shared layout and the
+   fallback colour. */
 .yRemoteSelection {
   background-color: color-mix(in srgb, var(--color-accent) 25%, transparent);
 }
@@ -54,4 +55,17 @@ body {
   height: 100%;
   border-left: 2px solid var(--color-accent);
   box-sizing: border-box;
+}
+/* [CONCEPT: CSS Generated Content] The name label is an ::after box: it shows above the caret without ever becoming part
+   of the code. It has no `content` until the person's own rule sets their name, so unknown carets get no label. */
+.yRemoteSelectionHead::after {
+  position: absolute;
+  bottom: 100%;
+  left: -2px;
+  padding: 0 4px;
+  border-radius: 3px 3px 3px 0;
+  font: 600 11px/16px var(--font-sans);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 10;
 }

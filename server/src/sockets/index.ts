@@ -3,6 +3,7 @@ import {
   colorFor,
   SOCKET_UNAUTHORIZED,
   type ClientToServerEvents,
+  type PresenceStatus,
   type RoomMember,
   type RoomRole,
   type ServerToClientEvents,
@@ -19,6 +20,8 @@ interface SocketData {
   user: AuthUser;
   /** The rooms this socket joined, and the role it had when it joined. */
   roles: Map<string, RoomRole>;
+  /** Whether this tab is in use (see presence:status). */
+  status: PresenceStatus;
 }
 
 export type SocketServer = Server<
@@ -35,6 +38,10 @@ interface SocketOptions {
 }
 
 const slugPayload = z.object({ slug: z.string().trim().min(1).max(64) });
+const statusPayload = z.object({
+  slug: z.string().trim().min(1).max(64),
+  status: z.enum(['online', 'idle']),
+});
 
 /** The Socket.IO room that carries one DevVerse room's events. */
 export const roomChannel = (slug: string) => `room:${slug}`;
@@ -66,6 +73,7 @@ export function attachSocketServer(
       if (typeof token !== 'string' || !token) throw new Error('missing token');
       socket.data.user = await auth.verifyAccessToken(token);
       socket.data.roles = new Map();
+      socket.data.status = 'online';
       next();
     } catch {
       // The client refreshes its token and reconnects when it sees this message.
@@ -76,20 +84,30 @@ export function attachSocketServer(
   async function connectedMembers(slug: string): Promise<RoomMember[]> {
     const members = new Map<string, RoomMember>();
     for (const socket of await io.in(roomChannel(slug)).fetchSockets()) {
-      const { user, roles } = socket.data;
+      const { user, roles, status } = socket.data;
       const role = roles.get(slug);
-      // Several tabs of the same person count once.
-      if (role && !members.has(user.id)) {
-        members.set(user.id, {
-          id: user.id,
-          username: user.username,
-          color: colorFor(user.username), // the same colour as their cursor in the editor
-          role,
-          status: 'online',
-        });
+      if (!role) continue;
+      const seen = members.get(user.id);
+      // Several tabs of the same person count once: online if any of them is in use.
+      if (seen) {
+        if (status === 'online') seen.status = 'online';
+        continue;
       }
+      members.set(user.id, {
+        id: user.id,
+        username: user.username,
+        color: colorFor(user.username), // the same colour as their cursor in the editor
+        role,
+        status,
+      });
     }
     return [...members.values()];
+  }
+
+  // [CONCEPT: Presence] Everyone in the room gets the full list of who is connected whenever it changes. Sending the
+  // whole list (at most 10 people) rather than "X joined" deltas means a client can never drift out of sync.
+  async function broadcastPresence(slug: string) {
+    io.to(roomChannel(slug)).emit('presence:update', { members: await connectedMembers(slug) });
   }
 
   io.on('connection', (socket) => {
@@ -109,6 +127,7 @@ export function attachSocketServer(
         // [CONCEPT: Socket.IO Rooms] A named group of sockets; emitting to it reaches everyone in the DevVerse room.
         await socket.join(roomChannel(slug));
         ack({ ok: true, data: { members: await connectedMembers(slug) } });
+        await broadcastPresence(slug);
       } catch (err) {
         if (!(err instanceof HttpError)) logger.error({ err, slug }, 'room:join failed');
         ack({
@@ -121,8 +140,29 @@ export function attachSocketServer(
     socket.on('room:leave', async (payload) => {
       const parsed = slugPayload.safeParse(payload);
       if (!parsed.success) return;
-      socket.data.roles.delete(parsed.data.slug);
-      await socket.leave(roomChannel(parsed.data.slug));
+      const { slug } = parsed.data;
+      if (!socket.data.roles.delete(slug)) return;
+      await socket.leave(roomChannel(slug));
+      await broadcastPresence(slug);
+    });
+
+    // The tab was hidden for a while (idle) or came back (online). Sent by the client on visibility changes.
+    socket.on('presence:status', async (payload) => {
+      const parsed = statusPayload.safeParse(payload);
+      // Ignore repeats, so a client can't make the server broadcast in a tight loop by resending the same status.
+      if (!parsed.success || parsed.data.status === socket.data.status) return;
+      socket.data.status = parsed.data.status;
+      // A tab's visibility is the same for every room it's in.
+      await Promise.all([...socket.data.roles.keys()].map(broadcastPresence));
+    });
+
+    // Socket.IO removes a disconnected socket from its rooms by itself; tell those rooms who is left.
+    socket.on('disconnect', () => {
+      for (const slug of socket.data.roles.keys()) {
+        broadcastPresence(slug).catch((err: unknown) =>
+          logger.warn({ err, slug }, 'Could not send presence after a disconnect'),
+        );
+      }
     });
   });
 
