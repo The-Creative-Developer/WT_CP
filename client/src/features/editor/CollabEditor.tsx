@@ -6,6 +6,7 @@ import * as Y from 'yjs';
 import { useEffectiveTheme } from '../../hooks/useEffectiveTheme';
 import { getAccessToken, refreshSession } from '../../lib/api';
 import { monaco } from './monaco';
+import { cursorStyles, remoteCursors } from './remote-cursors';
 
 /** Must match TEXT_NAME on the server. */
 const TEXT_NAME = 'content';
@@ -72,6 +73,21 @@ export default function CollabEditor({
     // [CONCEPT: Awareness] Ephemeral per-user state (name, colour, cursor) shared with the room but never saved.
     provider.awareness.setLocalStateField('user', { name: username, color: colorFor(username) });
 
+    // [CONCEPT: Constructable Stylesheets] Each person's caret colour and name label, rebuilt when someone joins,
+    // leaves or moves. Added through the CSSOM rather than a <style> tag, which a strict Content-Security-Policy
+    // would block.
+    const cursorSheet = new CSSStyleSheet();
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, cursorSheet];
+    let lastCursorCss = '';
+    const renderCursors = () => {
+      const css = cursorStyles(remoteCursors(provider.awareness.getStates(), doc.clientID));
+      // Moving a cursor changes awareness too, but rarely the rules; skip rebuilding when nothing visible changed.
+      if (css === lastCursorCss) return;
+      lastCursorCss = css;
+      cursorSheet.replaceSync(css);
+    };
+    provider.awareness.on('change', renderCursors);
+
     const model = monaco.editor.createModel(
       '',
       LANGUAGES[language].monaco,
@@ -85,6 +101,8 @@ export default function CollabEditor({
       fontSize: 14,
       fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-mono'),
       scrollBeyondLastLine: false,
+      // Room above the first line for other people's name labels, which sit on top of their carets.
+      padding: { top: 18 },
       ariaLabel: `${path}, code editor${readOnly ? ', read only' : ''}`,
     });
     // [CONCEPT: Keyboard Shortcuts] Monaco handles keys before the page sees them, so the room's Ctrl/⌘+Enter has to
@@ -137,6 +155,8 @@ export default function CollabEditor({
     });
 
     return () => {
+      provider.awareness.off('change', renderCursors);
+      document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== cursorSheet);
       binding.destroy();
       provider.destroy();
       editor.dispose();

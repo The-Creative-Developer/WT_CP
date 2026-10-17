@@ -196,3 +196,96 @@ describe('run events', () => {
     expect(received.get(leaver)).toEqual([]);
   });
 });
+
+describe('presence', () => {
+  /** Who each client was last told is in the room, as "username:status", sorted. */
+  function watchPresence(client: ClientSocket) {
+    const seen: { latest: string[] | null } = { latest: null };
+    client.on('presence:update', ({ members }) => {
+      seen.latest = members.map((m) => `${m.username}:${m.status}`).sort();
+    });
+    return seen;
+  }
+
+  /** Alice owns a public room that Bob has joined as a viewer. */
+  async function setUp() {
+    const alice = await signUp('alice');
+    const bob = await signUp('bob');
+    const { slug } = await createRoom(alice, 'public');
+    await request(server)
+      .post(`/api/v1/rooms/${slug}/join`)
+      .set('Authorization', `Bearer ${bob}`)
+      .send({});
+    return { alice, bob, slug };
+  }
+
+  it('tells everyone in the room when someone joins and leaves', async () => {
+    const { alice, bob, slug } = await setUp();
+    const aliceTab = connect(alice);
+    await connected(aliceTab);
+    const seenByAlice = watchPresence(aliceTab);
+    await aliceTab.emitWithAck('room:join', { slug });
+    await vi.waitFor(() => expect(seenByAlice.latest).toEqual(['alice:online']));
+
+    const bobTab = connect(bob);
+    await connected(bobTab);
+    await bobTab.emitWithAck('room:join', { slug });
+    await vi.waitFor(() => expect(seenByAlice.latest).toEqual(['alice:online', 'bob:online']));
+
+    bobTab.emit('room:leave', { slug });
+    await vi.waitFor(() => expect(seenByAlice.latest).toEqual(['alice:online']));
+  });
+
+  it('drops someone when their last tab disconnects, not before', async () => {
+    const { alice, bob, slug } = await setUp();
+    const aliceTab = connect(alice);
+    const bobTab1 = connect(bob);
+    const bobTab2 = connect(bob);
+    await Promise.all([aliceTab, bobTab1, bobTab2].map(connected));
+    const seenByAlice = watchPresence(aliceTab);
+    for (const tab of [aliceTab, bobTab1, bobTab2]) await tab.emitWithAck('room:join', { slug });
+    await vi.waitFor(() => expect(seenByAlice.latest).toEqual(['alice:online', 'bob:online']));
+
+    bobTab1.disconnect();
+    // Bob still has a tab open, so he stays; a round trip on that tab lets the server finish handling the disconnect.
+    await bobTab2.emitWithAck('room:join', { slug });
+    await vi.waitFor(() => expect(seenByAlice.latest).toEqual(['alice:online', 'bob:online']));
+
+    bobTab2.disconnect();
+    await vi.waitFor(() => expect(seenByAlice.latest).toEqual(['alice:online']));
+  });
+
+  it('shows someone as idle only when all their tabs are idle', async () => {
+    const { alice, bob, slug } = await setUp();
+    const aliceTab = connect(alice);
+    const bobTab1 = connect(bob);
+    const bobTab2 = connect(bob);
+    await Promise.all([aliceTab, bobTab1, bobTab2].map(connected));
+    const seenByAlice = watchPresence(aliceTab);
+    for (const tab of [aliceTab, bobTab1, bobTab2]) await tab.emitWithAck('room:join', { slug });
+
+    bobTab1.emit('presence:status', { slug, status: 'idle' });
+    await bobTab1.emitWithAck('room:join', { slug }); // round trip: the status change has been handled
+    await vi.waitFor(() => expect(seenByAlice.latest).toEqual(['alice:online', 'bob:online']));
+
+    bobTab2.emit('presence:status', { slug, status: 'idle' });
+    await vi.waitFor(() => expect(seenByAlice.latest).toEqual(['alice:online', 'bob:idle']));
+
+    bobTab1.emit('presence:status', { slug, status: 'online' });
+    await vi.waitFor(() => expect(seenByAlice.latest).toEqual(['alice:online', 'bob:online']));
+  });
+
+  it('ignores malformed status updates', async () => {
+    const { alice, slug } = await setUp();
+    const aliceTab = connect(alice);
+    await connected(aliceTab);
+    const seenByAlice = watchPresence(aliceTab);
+    await aliceTab.emitWithAck('room:join', { slug });
+    await vi.waitFor(() => expect(seenByAlice.latest).toEqual(['alice:online']));
+
+    aliceTab.emit('presence:status', { slug, status: 'away' as 'idle' });
+    aliceTab.emit('presence:status', null as unknown as { slug: string; status: 'idle' });
+    await aliceTab.emitWithAck('room:join', { slug });
+    await vi.waitFor(() => expect(seenByAlice.latest).toEqual(['alice:online']));
+  });
+});
