@@ -83,6 +83,8 @@ function connect(token?: string): ClientSocket {
 }
 
 function connected(client: ClientSocket): Promise<void> {
+  // It may have connected already, while the test was awaiting something else; 'connect' won't fire again.
+  if (client.connected) return Promise.resolve();
   return new Promise((resolve, reject) => {
     client.once('connect', resolve);
     client.once('connect_error', reject);
@@ -287,5 +289,109 @@ describe('presence', () => {
     aliceTab.emit('presence:status', null as unknown as { slug: string; status: 'idle' });
     await aliceTab.emitWithAck('room:join', { slug });
     await vi.waitFor(() => expect(seenByAlice.latest).toEqual(['alice:online']));
+  });
+});
+
+describe('chat', () => {
+  /** Alice and Bob (a viewer) are both in Alice's public room; Carol is connected but not a member. */
+  async function setUp() {
+    const aliceToken = await signUp('alice');
+    const bobToken = await signUp('bob');
+    const { slug } = await createRoom(aliceToken, 'public');
+    await request(server)
+      .post(`/api/v1/rooms/${slug}/join`)
+      .set('Authorization', `Bearer ${bobToken}`)
+      .send({});
+    const alice = connect(aliceToken);
+    const bob = connect(bobToken);
+    const carol = connect(await signUp('carol'));
+    await Promise.all([alice, bob, carol].map(connected));
+    await alice.emitWithAck('room:join', { slug });
+    await bob.emitWithAck('room:join', { slug });
+    return { slug, alice, bob, carol };
+  }
+
+  it('saves a message, answers the sender and sends it to everyone else in the room', async () => {
+    const { slug, alice, bob, carol } = await setUp();
+    const toBob: unknown[] = [];
+    const toAlice: unknown[] = [];
+    const toCarol: unknown[] = [];
+    bob.on('chat:new', (m) => toBob.push(m));
+    alice.on('chat:new', (m) => toAlice.push(m));
+    carol.on('chat:new', (m) => toCarol.push(m));
+
+    const res = await alice.emitWithAck('chat:send', { slug, body: '  hello **room**  ' });
+    expect(res).toEqual({
+      ok: true,
+      data: {
+        id: expect.any(String),
+        roomSlug: slug,
+        author: { id: expect.any(String), username: 'alice' },
+        body: 'hello **room**', // trimmed
+        createdAt: expect.any(String),
+      },
+    });
+    await vi.waitFor(() => expect(toBob).toEqual([res.ok && res.data]));
+    // The sender has the ack; an outsider gets nothing.
+    await bob.emitWithAck('room:join', { slug }); // round trip so any stray events have arrived
+    expect(toAlice).toEqual([]);
+    expect(toCarol).toEqual([]);
+  });
+
+  it('lets viewers chat, but not people outside the room', async () => {
+    const { slug, bob, carol } = await setUp();
+    expect((await bob.emitWithAck('chat:send', { slug, body: 'viewer here' })).ok).toBe(true);
+    expect(await carol.emitWithAck('chat:send', { slug, body: 'let me in' })).toEqual({
+      ok: false,
+      error: 'Join this room first',
+    });
+  });
+
+  it('rejects empty, oversized and malformed messages', async () => {
+    const { slug, alice } = await setUp();
+    expect(await alice.emitWithAck('chat:send', { slug, body: '   ' })).toEqual({
+      ok: false,
+      error: 'Write a message first',
+    });
+    expect((await alice.emitWithAck('chat:send', { slug, body: 'x'.repeat(2001) })).ok).toBe(false);
+    expect(
+      (
+        await alice.emitWithAck('chat:send', { slug, body: { $ne: null } } as unknown as {
+          slug: string;
+          body: string;
+        })
+      ).ok,
+    ).toBe(false);
+  });
+
+  it('limits how fast one socket can send', async () => {
+    const { slug, alice } = await setUp();
+    const results = [];
+    for (let i = 0; i < 6; i++) {
+      results.push((await alice.emitWithAck('chat:send', { slug, body: `spam ${i}` })).ok);
+    }
+    expect(results).toEqual([true, true, true, true, true, false]);
+  });
+
+  it('relays typing to the others in the room, at most once per interval', async () => {
+    const { slug, alice, bob } = await setUp();
+    const seen: unknown[] = [];
+    bob.on('chat:typing', (p) => seen.push(p));
+    alice.emit('chat:typing', { slug });
+    alice.emit('chat:typing', { slug }); // too soon: dropped
+    await alice.emitWithAck('room:join', { slug }); // round trip
+    await vi.waitFor(() =>
+      expect(seen).toEqual([{ userId: expect.any(String), username: 'alice' }]),
+    );
+  });
+
+  it('ignores typing for rooms the socket has not joined', async () => {
+    const { slug, bob, carol } = await setUp();
+    const seen: unknown[] = [];
+    bob.on('chat:typing', (p) => seen.push(p));
+    carol.emit('chat:typing', { slug });
+    await carol.emitWithAck('room:join', { slug: 'elsewhere' }); // round trip
+    await bob.emitWithAck('room:join', { slug });
+    expect(seen).toEqual([]);
   });
 });

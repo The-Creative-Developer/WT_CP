@@ -6,6 +6,7 @@ import { api, ApiError } from '../../lib/api';
 export const roomKeys = {
   all: ['rooms'] as const,
   detail: (slug: string) => ['rooms', slug] as const,
+  messages: (slug: string) => ['rooms', slug, 'messages'] as const,
 };
 
 export function useRooms() {

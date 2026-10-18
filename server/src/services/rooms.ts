@@ -9,6 +9,7 @@ import {
 } from '@devverse/shared';
 import mongoose, { Types } from 'mongoose';
 import { File } from '../models/file';
+import { Message } from '../models/message';
 import { Project } from '../models/project';
 import { Room, type RoomAttrs } from '../models/room';
 import { Run } from '../models/run';
@@ -245,5 +246,6 @@ export async function deleteRoom(userId: string, slug: string): Promise<void> {
     // Without this a deleted room's runs would linger until their TTL. A run still in progress is fine: it finishes
     // in memory and its final save simply matches nothing.
     await Run.deleteMany({ roomId: room._id }, { session });
+    await Message.deleteMany({ roomId: room._id }, { session });
   });
 }
