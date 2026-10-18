@@ -6,7 +6,6 @@ import { Dashboard } from './routes/Dashboard';
 import { Home } from './routes/Home';
 import { NotFound, RouteError } from './routes/NotFound';
 import { Placeholder } from './routes/Placeholder';
-import { RoomPage } from './routes/RoomPage';
 
 export const router = createBrowserRouter([
   {
@@ -27,7 +26,13 @@ export const router = createBrowserRouter([
         element: <RequireAuth />,
         children: [
           { path: 'dashboard', element: <Dashboard /> },
-          { path: 'rooms/:slug', element: <RoomPage /> },
+          {
+            path: 'rooms/:slug',
+            // [CONCEPT: Route-Based Code Splitting] The room page (chat, Markdown, Socket.IO, the run panel) is only
+            // downloaded when a room is opened, so the login page and dashboard stay light. Monaco is split further
+            // still (see RoomPage).
+            lazy: async () => ({ Component: (await import('./routes/RoomPage')).RoomPage }),
+          },
         ],
       },
       { path: '*', element: <NotFound /> },

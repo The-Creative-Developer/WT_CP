@@ -3,6 +3,8 @@ import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState } from 
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useAuth } from '../features/auth/AuthContext';
+import { ChatPanel } from '../features/chat/ChatPanel';
+import { useChat } from '../features/chat/useChat';
 import { MembersList } from '../features/rooms/MembersList';
 import { useDeleteRoom, useJoinRoom, useRoom } from '../features/rooms/queries';
 import { useRoomChannel } from '../features/rooms/useRoomChannel';
@@ -114,6 +116,7 @@ function RoomView({ room }: { room: RoomDetail }) {
   const file = room.files[0];
   const channel = useRoomChannel(room.slug);
   const runner = useRoomRun(room.slug, username, channel);
+  const chat = useChat(room.slug, channel, myId);
   const canRun = room.role !== 'viewer' && !!file;
   const { runFile, busy } = runner;
   const fileId = file?.id;
@@ -203,6 +206,7 @@ function RoomView({ room }: { room: RoomDetail }) {
             connected={channel.connected}
             myId={myId}
           />
+          <ChatPanel chat={chat} myId={myId} />
           {room.inviteCode && <InviteLink slug={room.slug} code={room.inviteCode} />}
           {room.role === 'owner' && <DeleteRoom room={room} />}
         </aside>

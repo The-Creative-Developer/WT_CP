@@ -1,5 +1,7 @@
 import type { Server as HttpServer } from 'node:http';
 import {
+  chatSendSchema,
+  chatTypingSchema,
   colorFor,
   SOCKET_UNAUTHORIZED,
   type ClientToServerEvents,
@@ -11,6 +13,7 @@ import {
 import { Server } from 'socket.io';
 import { z } from 'zod';
 import type { AuthService, AuthUser } from '../services/auth';
+import { postMessage } from '../services/chat';
 import { resolveRoomAccess } from '../services/rooms';
 import type { RunBroadcast, RunService } from '../services/runs';
 import { HttpError } from '../utils/http-error';
@@ -38,6 +41,12 @@ interface SocketOptions {
 }
 
 const slugPayload = z.object({ slug: z.string().trim().min(1).max(64) });
+// Chat flood control, per socket: at most CHAT_BURST messages in any CHAT_WINDOW_MS, and one typing signal per
+// TYPING_INTERVAL_MS. The client throttles typing to one per 2 s on its own; this protects against clients that don't.
+const CHAT_BURST = 5;
+const CHAT_WINDOW_MS = 5_000;
+const TYPING_INTERVAL_MS = 1_500;
+
 const statusPayload = z.object({
   slug: z.string().trim().min(1).max(64),
   status: z.enum(['online', 'idle']),
@@ -154,6 +163,50 @@ export function attachSocketServer(
       socket.data.status = parsed.data.status;
       // A tab's visibility is the same for every room it's in.
       await Promise.all([...socket.data.roles.keys()].map(broadcastPresence));
+    });
+
+    // [CONCEPT: Rate Limiting] A sliding window of this socket's recent message times.
+    const sentAt: number[] = [];
+    let lastTyping = 0;
+
+    socket.on('chat:send', async (payload, ack) => {
+      if (typeof ack !== 'function') return;
+      const parsed = chatSendSchema.safeParse(payload);
+      if (!parsed.success) {
+        return ack({ ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid message' });
+      }
+      const now = Date.now();
+      while (sentAt.length && now - sentAt[0]! > CHAT_WINDOW_MS) sentAt.shift();
+      if (sentAt.length >= CHAT_BURST) {
+        return ack({ ok: false, error: "You're sending messages too fast. Wait a moment." });
+      }
+      sentAt.push(now);
+      const { slug, body } = parsed.data;
+      try {
+        // Membership is checked against the database on every message, like every other room action.
+        const message = await postMessage(user, slug, body);
+        ack({ ok: true, data: message });
+        // Everyone else in the room, including the sender's other tabs; the sending tab has the ack.
+        socket.to(roomChannel(slug)).emit('chat:new', message);
+      } catch (err) {
+        if (!(err instanceof HttpError)) logger.error({ err, slug }, 'chat:send failed');
+        ack({
+          ok: false,
+          error: err instanceof HttpError ? err.message : 'Could not send the message',
+        });
+      }
+    });
+
+    socket.on('chat:typing', (payload) => {
+      const parsed = chatTypingSchema.safeParse(payload);
+      // Only for rooms this socket joined (membership was checked then), and not more often than the interval.
+      if (!parsed.success || !socket.data.roles.has(parsed.data.slug)) return;
+      const now = Date.now();
+      if (now - lastTyping < TYPING_INTERVAL_MS) return;
+      lastTyping = now;
+      socket
+        .to(roomChannel(parsed.data.slug))
+        .emit('chat:typing', { userId: user.id, username: user.username });
     });
 
     // Socket.IO removes a disconnected socket from its rooms by itself; tell those rooms who is left.

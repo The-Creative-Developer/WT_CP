@@ -1,7 +1,7 @@
-import { createRoomSchema, joinRoomSchema } from '@devverse/shared';
+import { createRoomSchema, joinRoomSchema, listMessagesQuerySchema } from '@devverse/shared';
 import { Router, type RequestHandler } from 'express';
 import * as controller from '../controllers/rooms';
-import { validateBody } from '../middleware/validate';
+import { validateBody, validateQuery } from '../middleware/validate';
 
 export function createRoomsRouter(authenticate: RequestHandler) {
   const router = Router();
@@ -13,6 +13,7 @@ export function createRoomsRouter(authenticate: RequestHandler) {
   router.get('/:slug', controller.getRoom);
   router.post('/:slug/join', validateBody(joinRoomSchema), controller.joinRoom);
   router.delete('/:slug', controller.deleteRoom);
+  router.get('/:slug/messages', validateQuery(listMessagesQuerySchema), controller.listMessages);
 
   return router;
 }
