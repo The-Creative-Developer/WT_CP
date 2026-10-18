@@ -99,6 +99,12 @@ All nine features from the brief ship at least at a basic level. Tiers set the o
 
 ## 4. Hosting & the Docker Host
 
+> **Update (Week 2):** DigitalOcean no longer gives Student Pack credits, so the Docker host is an **Azure for
+> Students** VM instead ($100 of credit a year, no card): **B2als_v2** (2 vCPU / 4 GB), Ubuntu 24.04, in East Asia
+> (Hong Kong), with the database on **MongoDB Atlas M0**. It uses option **B** below: Caddy serves the SPA and the API
+> from one `sslip.io` host (https://devverse.52-175-72-73.sslip.io). The rest of this section is the original plan;
+> [docs/deployment.md](deployment.md) describes what is actually deployed.
+
 ### Why the code runner needs its own server
 Running user code safely requires starting Docker containers on demand. That needs access to a **Docker Engine (daemon)** on a machine you control. Platform hosts such as Vercel, Netlify, Render and Railway run *your* app inside a container, but they **do not let your app start containers of its own**. So the runner needs a **virtual machine (VPS)**.
 
@@ -510,7 +516,7 @@ Each item needs your own account or signature. Assign one person per item.
 
 - [ ] **GitHub organisation + repo**; Projects board; branch protection on `main`.
 - [ ] **GitHub Student Developer Pack** approved for at least one teammate (approval can take a few days, so apply now).
-- [ ] **DigitalOcean** account via the Student Pack: create the 2 vCPU / 4 GB Ubuntu 24.04 Docker droplet; add SSH keys for all three teammates.
+- [ ] **DigitalOcean** account via the Student Pack: create the 2 vCPU / 4 GB Ubuntu 24.04 Docker droplet; add SSH keys for all three teammates. *(Replaced by an Azure for Students VM; see §4.)*
 - [ ] **Domain**: claim the Student Pack domain *or* decide to use `<vm-ip>.sslip.io` (option B in §4).
 - [ ] **MongoDB Atlas**: M0 cluster; database user; network access allowing the VM's IP (plus your dev IPs).
 - [ ] **Vercel** account linked to the repo (if using option A).
