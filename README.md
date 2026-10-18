@@ -4,12 +4,14 @@
 
 Web Development course project · 3-person team · 4-week build. The full execution plan is in [docs/PLAN.md](docs/PLAN.md).
 
+**Live:** https://devverse.52-175-72-73.sslip.io (an Azure VM; see [docs/deployment.md](docs/deployment.md)).
+
 ## Status
 
 | Week | Milestone                                                       | Status |
 | ---- | --------------------------------------------------------------- | ------ |
 | 0    | Repo scaffold, tooling, CI, app shell, API skeleton             | ✅     |
-| 1    | Auth, rooms, Yjs sync, deployed skeleton                        | ⏳     |
+| 1    | Auth, rooms, Yjs sync, deployed skeleton                        | ✅     |
 | 2    | Live cursors, chat, file tree, code execution                   | ⏳     |
 | 3    | WebRTC calls, AI assistant, code review, challenges, portfolios | ⏳     |
 | 4    | Stretch features, hardening, docs, demo                         | ⏳     |
