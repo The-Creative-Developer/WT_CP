@@ -1,4 +1,9 @@
-import { createRoomSchema, joinRoomSchema, listMessagesQuerySchema } from '@devverse/shared';
+import {
+  createRoomSchema,
+  joinRoomSchema,
+  listMessagesQuerySchema,
+  listRoomsQuerySchema,
+} from '@devverse/shared';
 import { Router, type RequestHandler } from 'express';
 import * as controller from '../controllers/rooms';
 import { validateBody, validateQuery } from '../middleware/validate';
@@ -8,7 +13,7 @@ export function createRoomsRouter(authenticate: RequestHandler) {
   // Every room endpoint needs a signed-in user.
   router.use(authenticate);
 
-  router.get('/', controller.listRooms);
+  router.get('/', validateQuery(listRoomsQuerySchema), controller.listRooms);
   router.post('/', validateBody(createRoomSchema), controller.createRoom);
   router.get('/:slug', controller.getRoom);
   router.post('/:slug/join', validateBody(joinRoomSchema), controller.joinRoom);

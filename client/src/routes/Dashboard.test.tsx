@@ -1,6 +1,6 @@
 import type { RoomDetail } from '@devverse/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -41,7 +41,7 @@ const createdRoom: RoomDetail = {
  * Signed in as alice. Responses are routed by "METHOD /path"; a list of responses is served in order, and the last
  * one repeats. Routing by URL (not call order) keeps tests independent of which component fetches first.
  */
-function renderDashboard(routes: Record<string, Response[]>) {
+function renderDashboard(routes: Record<string, Response[]>, initialUrl = '/dashboard') {
   const queues = new Map(Object.entries(routes));
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/api/v1/auth/refresh') return json(200, session);
@@ -56,7 +56,7 @@ function renderDashboard(routes: Record<string, Response[]>) {
       { path: '/dashboard', element: <Dashboard /> },
       { path: '/rooms/:slug', element: <p>Room page</p> },
     ],
-    { initialEntries: ['/dashboard'] },
+    { initialEntries: [initialUrl] },
   );
   render(
     <QueryClientProvider
@@ -67,7 +67,7 @@ function renderDashboard(routes: Record<string, Response[]>) {
       </AuthProvider>
     </QueryClientProvider>,
   );
-  return fetchMock;
+  return { fetchMock, router };
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -82,7 +82,7 @@ describe('Dashboard', () => {
   });
 
   it('creates a room from the dialog and opens it', async () => {
-    const fetchMock = renderDashboard({
+    const { fetchMock } = renderDashboard({
       'GET /api/v1/rooms': [json(200, []), json(200, [createdRoom])],
       'POST /api/v1/rooms': [json(201, createdRoom)],
     });
@@ -122,5 +122,69 @@ describe('Dashboard', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load your rooms.");
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByRole('link', { name: 'Pair Programming' })).toBeInTheDocument();
+  });
+
+  const otherRoom = { ...createdRoom, slug: 'interview-prep-x1', name: 'Interview prep' };
+  const roomRequests = (fetchMock: ReturnType<typeof vi.fn>) =>
+    fetchMock.mock.calls
+      .map(([url]) => String(url))
+      .filter((url) => url.startsWith('/api/v1/rooms'));
+
+  it('searches once typing pauses, and keeps the search in the URL', async () => {
+    const { fetchMock, router } = renderDashboard({
+      'GET /api/v1/rooms': [json(200, [createdRoom, otherRoom])],
+      'GET /api/v1/rooms?q=pair': [json(200, [createdRoom])],
+    });
+    await userEvent.type(await screen.findByRole('searchbox', { name: 'Search' }), 'pair');
+
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('1 room matches'));
+    expect(screen.queryByRole('link', { name: 'Interview prep' })).toBeNull();
+    // One request for the whole word, not one per letter.
+    expect(roomRequests(fetchMock)).toEqual(['/api/v1/rooms', '/api/v1/rooms?q=pair']);
+    expect(router.state.location.search).toBe('?q=pair');
+  });
+
+  it('takes its filters from the URL, ignoring values it does not know', async () => {
+    const { fetchMock } = renderDashboard(
+      { 'GET /api/v1/rooms?language=python': [json(200, [createdRoom])] },
+      '/dashboard?language=python&role=admin',
+    );
+    expect(await screen.findByRole('link', { name: 'Pair Programming' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Language' })).toHaveValue('python');
+    expect(screen.getByRole('combobox', { name: 'Your role' })).toHaveValue('');
+    expect(roomRequests(fetchMock)).toEqual(['/api/v1/rooms?language=python']);
+  });
+
+  it('says when nothing matches, and clearing the filters shows every room again', async () => {
+    const { router } = renderDashboard(
+      {
+        'GET /api/v1/rooms?q=zzz&role=viewer': [json(200, [])],
+        'GET /api/v1/rooms': [json(200, [createdRoom])],
+      },
+      '/dashboard?q=zzz&role=viewer',
+    );
+    expect(await screen.findByText('No rooms match')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create your first room' })).toBeNull();
+    expect(screen.getByRole('searchbox', { name: 'Search' })).toHaveValue('zzz');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(await screen.findByRole('link', { name: 'Pair Programming' })).toBeInTheDocument();
+    expect(screen.getByRole('searchbox', { name: 'Search' })).toHaveValue('');
+    expect(screen.getByRole('searchbox', { name: 'Search' })).toHaveFocus();
+    expect(router.state.location.search).toBe('');
+  });
+
+  it('filters by language straight away', async () => {
+    const { router } = renderDashboard({
+      'GET /api/v1/rooms': [json(200, [createdRoom, otherRoom])],
+      'GET /api/v1/rooms?language=javascript': [json(200, [otherRoom])],
+    });
+    await userEvent.selectOptions(
+      await screen.findByRole('combobox', { name: 'Language' }),
+      'javascript',
+    );
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('1 room matches'));
+    expect(screen.queryByRole('link', { name: 'Pair Programming' })).toBeNull();
+    expect(router.state.location.search).toBe('?language=javascript');
   });
 });

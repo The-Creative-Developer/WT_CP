@@ -1,4 +1,9 @@
-import type { CreateRoomInput, JoinRoomInput, ListMessagesQuery } from '@devverse/shared';
+import type {
+  CreateRoomInput,
+  JoinRoomInput,
+  ListMessagesQuery,
+  ListRoomsQuery,
+} from '@devverse/shared';
 import type { RequestHandler } from 'express';
 import { currentUser } from '../middleware/auth';
 import { validQuery } from '../middleware/validate';
@@ -8,7 +13,7 @@ import * as rooms from '../services/rooms';
 type SlugParams = { slug: string };
 
 export const listRooms: RequestHandler = async (req, res) => {
-  res.json(await rooms.listRooms(currentUser(req).id));
+  res.json(await rooms.listRooms(currentUser(req).id, validQuery<ListRoomsQuery>(res)));
 };
 
 export const createRoom: RequestHandler = async (req, res) => {

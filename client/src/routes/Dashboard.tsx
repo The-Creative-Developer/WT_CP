@@ -4,6 +4,7 @@ import { Link } from 'react-router';
 import { useAuth } from '../features/auth/AuthContext';
 import { CreateRoomDialog, type CreateRoomDialogHandle } from '../features/rooms/CreateRoomDialog';
 import { useRooms } from '../features/rooms/queries';
+import { hasFilters, RoomFilters, useRoomFilters } from '../features/rooms/RoomFilters';
 import { timeAgo } from '../lib/format';
 
 // [CONCEPT: Responsive Grid] auto-fill + minmax fits as many 16rem-wide cards per row as the screen allows.
@@ -12,7 +13,11 @@ const gridClass = 'grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(16r
 export function Dashboard() {
   const { state } = useAuth();
   const dialogRef = useRef<CreateRoomDialogHandle>(null);
-  const rooms = useRooms();
+  const { filters, update } = useRoomFilters();
+  const rooms = useRooms(filters);
+  const filtered = hasFilters(filters);
+  // While a new search loads, the old results are still showing; they say nothing yet about the new filters.
+  const stale = rooms.isPlaceholderData;
   const username = state.status === 'authenticated' ? state.user.username : '';
   const openDialog = () => dialogRef.current?.open();
 
@@ -39,6 +44,14 @@ export function Dashboard() {
         <h2 id="rooms-title" className="mb-3 text-lg font-semibold">
           Your rooms
         </h2>
+        {/* Hidden for someone with no rooms at all: there's nothing to search yet. */}
+        {(filtered || stale || (rooms.data?.length ?? 0) > 0) && (
+          <RoomFilters filters={filters} onChange={update} />
+        )}
+        {/* [CONCEPT: Live Regions] Says how many rooms a search found, since the change happens away from focus. */}
+        <p role="status" className="sr-only">
+          {filtered && rooms.isSuccess && !stale ? matchCount(rooms.data.length) : ''}
+        </p>
         {rooms.isPending ? (
           <RoomsSkeleton />
         ) : rooms.isError ? (
@@ -51,6 +64,13 @@ export function Dashboard() {
             >
               Try again
             </button>
+          </div>
+        ) : rooms.data.length === 0 && (filtered || stale) ? (
+          <div className="rounded-xl border border-dashed border-border p-10 text-center">
+            <p className="font-medium">No rooms match</p>
+            <p className="mt-1 text-sm text-muted">
+              Try a different name, or clear the filters to see all your rooms.
+            </p>
           </div>
         ) : rooms.data.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border p-10 text-center">
@@ -67,7 +87,11 @@ export function Dashboard() {
             </button>
           </div>
         ) : (
-          <ul className={gridClass}>
+          // Older results stay (dimmed) while a new search loads, rather than flashing back to the skeleton.
+          <ul
+            aria-busy={stale}
+            className={`${gridClass} transition-opacity ${stale ? 'opacity-60' : ''}`}
+          >
             {rooms.data.map((room) => (
               <li key={room.slug}>
                 <RoomCard room={room} />
@@ -81,6 +105,9 @@ export function Dashboard() {
     </section>
   );
 }
+
+const matchCount = (n: number) =>
+  n === 0 ? 'No rooms match the filters' : n === 1 ? '1 room matches' : `${n} rooms match`;
 
 function RoomCard({ room }: { room: RoomSummary }) {
   return (
