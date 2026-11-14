@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from 'react-router';
 import { AccountControls } from '../../features/auth/AccountControls';
 import styles from '../../styles/app-shell.module.css';
+import { ConnectionBanner } from './ConnectionBanner';
 import { ServerStatus } from './ServerStatus';
 import { ThemeToggle } from './ThemeToggle';
 
@@ -40,6 +41,7 @@ export function AppShell() {
         </div>
       </header>
       <main id="main-content" className={styles.main} tabIndex={-1}>
+        <ConnectionBanner />
         <Outlet />
       </main>
       <footer className={styles.footer}>

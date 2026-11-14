@@ -10,6 +10,7 @@
   --color-accent-contrast: #ffffff;
   --color-danger: #c2253c;
   --color-success: #1a7f4b;
+  --color-warning: #b45309;
 
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -36,6 +37,7 @@
     --color-accent-contrast: #0b1020;
     --color-danger: #f87189;
     --color-success: #4ade80;
+    --color-warning: #fbbf24;
     --shadow-md: 0 4px 16px rgb(0 0 0 / 0.4);
     color-scheme: dark;
   }
@@ -52,6 +54,7 @@
   --color-accent-contrast: #0b1020;
   --color-danger: #f87189;
   --color-success: #4ade80;
+  --color-warning: #fbbf24;
   --shadow-md: 0 4px 16px rgb(0 0 0 / 0.4);
   color-scheme: dark;
 }
