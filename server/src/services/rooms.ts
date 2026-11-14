@@ -155,12 +155,16 @@ export interface RoomAccess {
  */
 export async function resolveRoomAccess(
   userId: string,
-  room: { slug: string } | { id: Types.ObjectId | string },
+  room: { slug: string } | { id: Types.ObjectId | string } | { projectId: string },
   notMemberMessage = 'Join this room first',
 ): Promise<RoomAccess> {
-  const found = await Room.findOne('slug' in room ? { slug: room.slug } : { _id: room.id })
-    .select('slug projectId language members')
-    .lean();
+  const filter =
+    'slug' in room
+      ? { slug: room.slug }
+      : 'projectId' in room
+        ? { projectId: room.projectId }
+        : { _id: room.id };
+  const found = await Room.findOne(filter).select('slug projectId language members').lean();
   if (!found) throw HttpError.notFound('Room not found');
   const role = roleOf(found, userId);
   if (!role) throw HttpError.forbidden(notMemberMessage);

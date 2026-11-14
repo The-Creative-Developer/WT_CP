@@ -60,6 +60,9 @@ const roomSchema = new Schema<RoomAttrs>(
 );
 
 roomSchema.index({ slug: 1 }, { unique: true });
+// Each project belongs to one room; file endpoints (/projects/:id/files) find the room, and so the caller's role,
+// through this.
+roomSchema.index({ projectId: 1 }, { unique: true });
 // [CONCEPT: Multikey Index] Indexing a field inside an array indexes every element, so "rooms I belong to" is fast.
 roomSchema.index({ 'members.userId': 1, updatedAt: -1 });
 

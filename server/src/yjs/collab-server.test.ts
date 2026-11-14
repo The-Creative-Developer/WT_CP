@@ -173,6 +173,31 @@ describe('collaborative editing', () => {
   });
 });
 
+describe('deleting an open file', () => {
+  it('disconnects its editors with 4404 and does not bring the file back', async () => {
+    const { owner, slug, fileId } = await setUpRoom();
+    const room = await request(app)
+      .get(`/api/v1/rooms/${slug}`)
+      .set('Authorization', `Bearer ${owner}`);
+    const a = connect(owner, slug, fileId);
+    await synced(a.provider);
+    const closed = new Promise<number>((resolve) =>
+      a.provider.once('connection-close', (event: CloseEvent | null) => resolve(event?.code ?? 0)),
+    );
+    a.text.insert(0, 'unsaved ');
+
+    await request(app)
+      .delete(`/api/v1/projects/${room.body.projectId}/files/${fileId}`)
+      .set('Authorization', `Bearer ${owner}`)
+      .expect(204);
+
+    expect(await closed).toBe(CloseCode.NotFound);
+    // The pending save runs when the last editor leaves; it must not recreate the document.
+    await new Promise((r) => setTimeout(r, 200));
+    expect(await File.exists({ _id: fileId })).toBeNull();
+  });
+});
+
 describe('collab handshake', () => {
   it('rejects a missing or invalid token with 4401', async () => {
     const { slug, fileId } = await setUpRoom();

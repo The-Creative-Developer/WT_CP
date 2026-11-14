@@ -199,6 +199,34 @@ describe('run events', () => {
   });
 });
 
+describe('file events', () => {
+  it('tell everyone in the room when the file list changes', async () => {
+    const alice = await signUp('alice');
+    const res = await request(server)
+      .post('/api/v1/rooms')
+      .set('Authorization', `Bearer ${alice}`)
+      .send({ name: 'Socket Room', language: 'python' });
+    const { slug, projectId } = res.body as { slug: string; projectId: string };
+    const client = connect(alice);
+    await connected(client);
+    await client.emitWithAck('room:join', { slug });
+
+    const changed = new Promise((resolve) => client.once('files:changed', resolve));
+    await request(server)
+      .post(`/api/v1/projects/${projectId}/files`)
+      .set('Authorization', `Bearer ${alice}`)
+      .send({ path: 'src/util.py' })
+      .expect(201);
+    expect(await changed).toEqual({
+      by: 'alice',
+      files: [
+        { id: expect.any(String), path: 'main.py' },
+        { id: expect.any(String), path: 'src/util.py' },
+      ],
+    });
+  });
+});
+
 describe('presence', () => {
   /** Who each client was last told is in the room, as "username:status", sorted. */
   function watchPresence(client: ClientSocket) {

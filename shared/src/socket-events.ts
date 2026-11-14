@@ -1,5 +1,6 @@
 import type { Language } from './languages';
 import type { RoomRole } from './roles';
+import type { FileSummary } from './schemas/file';
 import type { RunVerdict } from './schemas/run';
 
 // [CONCEPT: Typed Event Contracts] Socket.IO generics make every emit/on call type-checked on both ends.
@@ -34,6 +35,12 @@ export interface RunFinishedPayload {
   error: string | null;
 }
 
+export interface FilesChangedPayload {
+  files: FileSummary[];
+  /** Username of whoever made the change. */
+  by: string;
+}
+
 /** The connect_error message for a missing or expired access token: refresh it and reconnect. */
 export const SOCKET_UNAUTHORIZED = 'unauthorized';
 
@@ -41,6 +48,8 @@ export interface ServerToClientEvents {
   'presence:update': (payload: { members: RoomMember[] }) => void;
   'chat:new': (message: ChatMessage) => void;
   'chat:typing': (payload: { userId: string; username: string }) => void;
+  /** A file was added, renamed, moved or deleted. Carries the whole (small) list, so clients can't drift. */
+  'files:changed': (payload: FilesChangedPayload) => void;
   /** `by` is the username of whoever pressed Run. */
   'run:started': (payload: { runId: string; by: string; language: Language }) => void;
   'run:output': (payload: { runId: string; stream: RunStream; chunk: string }) => void;

@@ -2,6 +2,7 @@ import type { IncomingMessage, Server } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import type { AuthService } from '../services/auth';
+import { roomEvents } from '../services/room-events';
 import { resolveFileAccess } from '../services/rooms';
 import { HttpError } from '../utils/http-error';
 import { logger } from '../utils/logger';
@@ -188,6 +189,20 @@ export function attachCollabServer(server: Server, { auth, allowedOrigins }: Col
 
   server.on('upgrade', onUpgrade);
 
+  // A deleted file's editors are disconnected; 4404 also tells y-websocket not to reconnect. Its last save simply
+  // matches nothing, so the file doesn't come back.
+  const unsubscribeFiles = roomEvents.onFilesChanged(({ deletedIds }) => {
+    for (const fileId of deletedIds) {
+      docs.get(fileId)?.doc.then(
+        (shared) => {
+          for (const ws of shared.conns.keys())
+            ws.close(CloseCode.NotFound, 'This file was deleted');
+        },
+        () => undefined,
+      );
+    }
+  });
+
   return {
     /**
      * The text everyone currently sees in a file, straight from the live document. Returns undefined when nobody
@@ -209,6 +224,7 @@ export function attachCollabServer(server: Server, { auth, allowedOrigins }: Col
     /** Disconnects everyone and saves every open document. Call before closing the database. */
     async close() {
       server.off('upgrade', onUpgrade);
+      unsubscribeFiles();
       clearInterval(heartbeat);
       for (const ws of wss.clients) ws.close(CloseCode.ServiceRestart, 'Server restarting');
       const open = await Promise.allSettled([...docs.values()].map((entry) => entry.doc));

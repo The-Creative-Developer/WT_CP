@@ -155,6 +155,18 @@ describe('POST /runs', () => {
     expect((await startRun(other.owner, { roomSlug: other.slug, fileId })).status).toBe(404);
   });
 
+  it("only runs files in the room's language", async () => {
+    const { owner, slug, fileId } = await setUpRoom();
+    const room = await Room.findOne({ slug }).lean();
+    const notes = await File.create({ projectId: room!.projectId, path: 'notes.txt' });
+    const res = await startRun(owner, { roomSlug: slug, fileId: notes.id as string });
+    expect(res.status).toBe(422);
+    expect(res.body.title).toBe('Only .py files can be run in a Python room');
+    expect(runner.requests).toHaveLength(0);
+    // The starter file still runs.
+    expect((await startRun(owner, { roomSlug: slug, fileId })).status).toBe(202);
+  });
+
   it('allows one run at a time per user', async () => {
     const { owner, slug, fileId } = await setUpRoom();
     const release = deferred();

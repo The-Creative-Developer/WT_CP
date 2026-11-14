@@ -14,6 +14,7 @@ import { Server } from 'socket.io';
 import { z } from 'zod';
 import type { AuthService, AuthUser } from '../services/auth';
 import { postMessage } from '../services/chat';
+import { roomEvents } from '../services/room-events';
 import { resolveRoomAccess } from '../services/rooms';
 import type { RunBroadcast, RunService } from '../services/runs';
 import { HttpError } from '../utils/http-error';
@@ -227,11 +228,16 @@ export function attachSocketServer(
     else room.emit(broadcast.event, broadcast.payload);
   });
 
+  const unsubscribeFiles = roomEvents.onFilesChanged(({ roomSlug, files, by }) => {
+    io.to(roomChannel(roomSlug)).emit('files:changed', { files, by });
+  });
+
   return {
     io,
     /** Disconnects every client. Leaves the HTTP server itself running (io.close() would close it too). */
     close() {
       unsubscribe?.();
+      unsubscribeFiles();
       io.disconnectSockets(true);
       io.engine.close();
     },
