@@ -1,3 +1,4 @@
+import { COLLAB_MESSAGE_SAVED, COLLAB_TEXT_NAME } from '@devverse/shared';
 import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
 import type { WebSocket } from 'ws';
@@ -12,8 +13,8 @@ const MESSAGE_SYNC = 0;
 const MESSAGE_AWARENESS = 1;
 const MESSAGE_QUERY_AWARENESS = 3;
 
-/** The Y.Text that the editor binds to. Client and server must use the same name. */
-export const TEXT_NAME = 'content';
+/** The Y.Text that the editor binds to. */
+export const TEXT_NAME = COLLAB_TEXT_NAME;
 
 const SAVE_DEBOUNCE_MS = 2_000;
 const SAVE_MAX_WAIT_MS = 10_000;
@@ -38,6 +39,8 @@ export class SharedDoc {
   private saveTimer: NodeJS.Timeout | null = null;
   private firstUnsavedAt: number | null = null;
   private saving: Promise<void> = Promise.resolve();
+  /** What MongoDB holds, as an encoded Yjs snapshot; sent to clients so they can show whether their edits are saved. */
+  private savedSnapshot: Uint8Array = Y.encodeSnapshot(Y.snapshot(this.doc));
 
   constructor(readonly fileId: string) {
     // The server is not a user: it has no cursor of its own.
@@ -85,6 +88,7 @@ export class SharedDoc {
       Y.applyUpdate(this.doc, new Uint8Array(file.yState), 'load');
       // Loading isn't an edit; don't write the same state straight back.
       this.cancelSave();
+      this.savedSnapshot = Y.encodeSnapshot(Y.snapshot(this.doc));
       return;
     }
     this.doc.getText(TEXT_NAME).insert(0, file.content);
@@ -113,6 +117,7 @@ export class SharedDoc {
         ),
       );
     }
+    this.send(conn.ws, this.savedMessage());
   }
 
   removeConnection(ws: WebSocket) {
@@ -208,23 +213,39 @@ export class SharedDoc {
   }
 
   private async save() {
+    // Captured together, before the write: edits arriving while it's in flight belong to the next save.
+    const state = Y.encodeStateAsUpdate(this.doc);
+    const snapshot = Y.encodeSnapshot(Y.snapshot(this.doc));
     try {
       await File.updateOne(
         { _id: this.fileId },
         {
           $set: {
             // The full CRDT state (keeps history needed to merge offline edits)...
-            yState: Buffer.from(Y.encodeStateAsUpdate(this.doc)),
+            yState: Buffer.from(state),
             // ...and a plain-text copy for runs, downloads and search.
             content: this.doc.getText(TEXT_NAME).toString(),
           },
         },
       );
+      this.savedSnapshot = snapshot;
+      this.broadcast(this.savedMessage());
     } catch (err) {
       logger.error({ err, fileId: this.fileId }, 'Failed to save document');
-      // Try again on the next edit rather than losing the change silently.
-      this.firstUnsavedAt = null;
+      // Try again shortly. Editors keep seeing "Saving…" meanwhile, rather than a "Saved" that isn't true.
+      this.scheduleSave();
     }
+  }
+
+  /**
+   * [CONCEPT: Acknowledgements] Tells clients exactly what is saved. A snapshot (state vector + deleted ranges) is
+   * used rather than just a state vector, because deleting text doesn't advance the state vector: a delete-only
+   * edit would look saved when it wasn't.
+   */
+  private savedMessage(): Uint8Array {
+    return encodeMessage(COLLAB_MESSAGE_SAVED, (e) =>
+      encoding.writeVarUint8Array(e, this.savedSnapshot),
+    );
   }
 
   private broadcast(message: Uint8Array, except?: unknown) {

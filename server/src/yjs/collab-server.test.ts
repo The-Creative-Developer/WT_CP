@@ -1,5 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { COLLAB_MESSAGE_SAVED } from '@devverse/shared';
+import * as decoding from 'lib0/decoding';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
@@ -75,6 +77,8 @@ function connect(token: string, slug: string, fileId: string) {
     WebSocketPolyfill: WebSocket as never,
     disableBc: true, // BroadcastChannel would let test clients sync without the server
   });
+  // Stock y-websocket logs "Unable to compute message" for DevVerse's extra message type; the editor handles it.
+  provider.messageHandlers[COLLAB_MESSAGE_SAVED] = () => undefined;
   providers.push(provider);
   return { doc, provider, text: doc.getText(TEXT_NAME) };
 }
@@ -171,6 +175,32 @@ describe('collaborative editing', () => {
     await synced(again.provider);
     expect(again.text.toString()).toBe(expected);
   });
+});
+
+describe('save acknowledgements', () => {
+  /** Tracks the "saved" messages a client receives, the way the editor does. */
+  function watchSaves(provider: WebsocketProvider, doc: Y.Doc) {
+    let saved: Y.Snapshot | null = null;
+    provider.messageHandlers[COLLAB_MESSAGE_SAVED] = (_encoder, decoder) => {
+      saved = Y.decodeSnapshot(decoding.readVarUint8Array(decoder));
+    };
+    return () => saved !== null && Y.equalSnapshots(Y.snapshot(doc), saved);
+  }
+
+  it('tells each client when everything it has is saved, deletions included', async () => {
+    const { owner, slug, fileId } = await setUpRoom();
+    const a = connect(owner, slug, fileId);
+    const allSaved = watchSaves(a.provider, a.doc);
+    await synced(a.provider);
+    // A new connection hears what is saved straight away.
+    await eventually(allSaved);
+
+    // Deleting doesn't advance the state vector, so this is what a state-vector check would miss.
+    a.text.delete(0, 3);
+    expect(allSaved()).toBe(false);
+    await eventually(allSaved, 5000); // after the 2 s save debounce
+    expect((await File.findById(fileId).lean())?.content).toBe(a.text.toString());
+  }, 10_000);
 });
 
 describe('deleting an open file', () => {

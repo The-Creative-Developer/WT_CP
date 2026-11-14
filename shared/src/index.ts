@@ -1,3 +1,4 @@
+export * from './collab';
 export * from './color';
 export * from './roles';
 export * from './languages';

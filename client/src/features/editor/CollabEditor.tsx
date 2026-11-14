@@ -1,4 +1,4 @@
-import { colorFor } from '@devverse/shared';
+import { COLLAB_MESSAGE_SAVED, COLLAB_TEXT_NAME, colorFor } from '@devverse/shared';
 import { useEffect, useRef, useState } from 'react';
 import { MonacoBinding } from 'y-monaco';
 import { WebsocketProvider } from 'y-websocket';
@@ -8,9 +8,8 @@ import { getAccessToken, refreshSession } from '../../lib/api';
 import { monacoLanguageFor } from './languages';
 import { monaco } from './monaco';
 import { cursorStyles, remoteCursors } from './remote-cursors';
+import { isSaved, readSavedSnapshot } from './save-state';
 
-/** Must match TEXT_NAME on the server. */
-const TEXT_NAME = 'content';
 const CLOSE_UNAUTHORIZED = 4401;
 
 type Connection =
@@ -21,7 +20,7 @@ const STATUS_LABEL: Record<Connection['state'], string> = {
   connecting: 'Connecting…',
   syncing: 'Loading the latest version…',
   live: 'Live',
-  reconnecting: 'Reconnecting… your edits are kept and will sync',
+  reconnecting: 'Reconnecting…',
   denied: '',
 };
 
@@ -65,6 +64,8 @@ export default function CollabEditor({
   }, [onRun]);
   const theme = useEffectiveTheme();
   const [connection, setConnection] = useState<Connection>({ state: 'connecting' });
+  // Whether everything in this browser's copy is saved on the server; null until the server first says.
+  const [saved, setSaved] = useState<boolean | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -116,9 +117,19 @@ export default function CollabEditor({
     // [CONCEPT: Keyboard Shortcuts] Monaco handles keys before the page sees them, so the room's Ctrl/⌘+Enter has to
     // be registered with the editor too. CtrlCmd means ⌘ on a Mac and Ctrl elsewhere.
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => onRunRef.current?.());
+    // The server says what it has saved after each save (and on connect); compare that with this copy after every
+    // change, local or remote. The y-websocket client lets each provider handle extra message types.
+    let savedSnapshot: Y.Snapshot | null = null;
+    const checkSaved = () => setSaved(isSaved(doc, savedSnapshot));
+    provider.messageHandlers[COLLAB_MESSAGE_SAVED] = (_encoder, decoder) => {
+      savedSnapshot = readSavedSnapshot(decoder);
+      checkSaved();
+    };
+    doc.on('update', checkSaved);
+
     // [CONCEPT: Data Binding] Keeps the Monaco model and the shared Y.Text in step, in both directions.
     const binding = new MonacoBinding(
-      doc.getText(TEXT_NAME),
+      doc.getText(COLLAB_TEXT_NAME),
       model,
       new Set([editor]),
       provider.awareness,
@@ -164,6 +175,7 @@ export default function CollabEditor({
 
     return () => {
       editorRef.current = null;
+      doc.off('update', checkSaved);
       provider.awareness.off('change', renderCursors);
       document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== cursorSheet);
       binding.destroy();
@@ -184,6 +196,17 @@ export default function CollabEditor({
     editor.updateOptions({ ariaLabel: editorLabel(path, readOnly) });
   }, [path, readOnly]);
 
+  // Edits that only exist in this browser (made while disconnected) are lost if the tab closes. While connected,
+  // every edit reaches the server at once and it saves them even after everyone leaves, so no warning is needed.
+  const atRisk = saved === false && connection.state !== 'live';
+  useEffect(() => {
+    if (!atRisk) return;
+    // [CONCEPT: beforeunload] Asks the browser to confirm leaving. Browsers show their own wording, not ours.
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [atRisk]);
+
   useEffect(() => {
     monaco.editor.setTheme(theme === 'dark' ? 'vs-dark' : 'vs');
   }, [theme]);
@@ -199,15 +222,19 @@ export default function CollabEditor({
             </span>
           )}
         </span>
-        {/* [CONCEPT: Live Regions] Connection changes are announced without stealing focus from the editor. */}
-        <span role="status" className="flex items-center gap-2 text-muted">
-          {connection.state !== 'denied' && (
-            <span
-              aria-hidden="true"
-              className={`inline-block h-2 w-2 rounded-full ${connection.state === 'live' ? 'bg-green-500' : 'bg-amber-500'}`}
-            />
-          )}
-          {connection.state === 'denied' ? '' : STATUS_LABEL[connection.state]}
+        <span className="flex items-center gap-3">
+          {/* Not a live region: it changes with every pause in typing, which would be a lot to hear. */}
+          <SaveIndicator saved={saved} live={connection.state === 'live'} />
+          {/* [CONCEPT: Live Regions] Connection changes are announced without stealing focus from the editor. */}
+          <span role="status" className="flex items-center gap-2 text-muted">
+            {connection.state !== 'denied' && (
+              <span
+                aria-hidden="true"
+                className={`inline-block h-2 w-2 rounded-full ${connection.state === 'live' ? 'bg-green-500' : 'bg-amber-500'}`}
+              />
+            )}
+            {connection.state === 'denied' ? '' : STATUS_LABEL[connection.state]}
+          </span>
         </span>
       </div>
       {connection.state === 'denied' ? (
@@ -226,4 +253,15 @@ export default function CollabEditor({
       </p>
     </div>
   );
+}
+
+/**
+ * Whether the file's latest changes are saved. Saving is automatic (the server writes a pause after typing stops),
+ * so this is about reassurance: "Saving…" while changes wait, "Saved" once they're in the database.
+ */
+function SaveIndicator({ saved, live }: { saved: boolean | null; live: boolean }) {
+  if (saved === null) return null;
+  if (saved) return <span className="text-muted">Saved</span>;
+  if (live) return <span className="text-muted">Saving…</span>;
+  return <span className="text-warning">Edits not saved yet: kept here until you reconnect</span>;
 }
