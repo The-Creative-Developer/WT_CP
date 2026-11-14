@@ -88,6 +88,49 @@ describe('GET /rooms', () => {
     // The invite code is a secret: never part of a list response.
     expect(JSON.stringify(res.body)).not.toContain('inviteCode');
   });
+
+  const names = (res: request.Response) => res.body.map((r: { name: string }) => r.name);
+
+  it('searches names case-insensitively, and filters by language and my role', async () => {
+    const alice = await signUp('alice');
+    const bob = await signUp('bob');
+    await createRoom(alice, { name: 'Pair Programming', language: 'python' });
+    await createRoom(alice, { name: 'Interview prep', language: 'javascript' });
+    const bobs = await createRoom(bob, { name: 'Bob pairs', language: 'python' });
+    await join(alice, bobs.body.slug, bobs.body.inviteCode); // alice is an editor here
+
+    const list = (query: string) =>
+      request(app).get(`/api/v1/rooms?${query}`).set('Authorization', alice);
+
+    expect(names(await list('q=PAIR'))).toEqual(['Bob pairs', 'Pair Programming']);
+    expect(names(await list('language=javascript'))).toEqual(['Interview prep']);
+    expect(names(await list('role=owner&language=python'))).toEqual(['Pair Programming']);
+    expect(names(await list('role=editor'))).toEqual(['Bob pairs']);
+    // Blank means "any".
+    expect(names(await list('q=%20%20'))).toHaveLength(3);
+  });
+
+  it('matches the search literally, not as a regular expression', async () => {
+    const alice = await signUp('alice');
+    await createRoom(alice, { name: 'C++ (basics)' });
+    await createRoom(alice, { name: 'Cool room' });
+    const list = (q: string) =>
+      request(app)
+        .get(`/api/v1/rooms?q=${encodeURIComponent(q)}`)
+        .set('Authorization', alice);
+
+    expect(names(await list('c++ ('))).toEqual(['C++ (basics)']);
+    expect(names(await list('.*'))).toEqual([]);
+    // A catastrophic-backtracking pattern is just text: it answers straight away, matching nothing.
+    expect(names(await list('(a+)+$'))).toEqual([]);
+  });
+
+  it('rejects unknown filters', async () => {
+    const alice = await signUp('alice');
+    const res = await request(app).get('/api/v1/rooms?language=cobol').set('Authorization', alice);
+    expect(res.status).toBe(422);
+    expect(res.body.errors).toHaveProperty('language');
+  });
 });
 
 describe('GET /rooms/:slug', () => {

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { LANGUAGE_IDS, type Language } from '../languages';
-import type { RoomRole } from '../roles';
+import { ROOM_ROLES, type RoomRole } from '../roles';
 import type { FileSummary } from './file';
 
 export const MAX_ROOM_MEMBERS = 10;
@@ -21,8 +21,23 @@ export const joinRoomSchema = z.object({
   inviteCode: z.string().trim().max(64).optional(),
 });
 
+export const MAX_ROOM_SEARCH_LENGTH = 60;
+
+/** GET /api/v1/rooms?q=&language=&role= : the dashboard's search and filters. Empty values mean "any". */
+export const listRoomsQuerySchema = z.object({
+  q: z
+    .string()
+    .trim()
+    .max(MAX_ROOM_SEARCH_LENGTH, `Search at most ${MAX_ROOM_SEARCH_LENGTH} characters`)
+    .transform((q) => q || undefined)
+    .optional(),
+  language: z.enum(LANGUAGE_IDS as [Language, ...Language[]]).optional(),
+  role: z.enum(ROOM_ROLES).optional(),
+});
+
 export type CreateRoomInput = z.infer<typeof createRoomSchema>;
 export type JoinRoomInput = z.infer<typeof joinRoomSchema>;
+export type ListRoomsQuery = z.infer<typeof listRoomsQuerySchema>;
 
 /** One card on the dashboard. */
 export interface RoomSummary {

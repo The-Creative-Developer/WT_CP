@@ -1,18 +1,29 @@
-import type { CreateRoomInput, RoomDetail, RoomSummary } from '@devverse/shared';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { CreateRoomInput, ListRoomsQuery, RoomDetail, RoomSummary } from '@devverse/shared';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../lib/api';
 
 // [CONCEPT: Query Keys] Hierarchical keys let one invalidate(['rooms']) refresh both the list and every room.
 export const roomKeys = {
   all: ['rooms'] as const,
+  // 'lists' can't clash with a slug: slugs always end in "-<random suffix>".
+  lists: ['rooms', 'lists'] as const,
+  list: (filters: ListRoomsQuery) => ['rooms', 'lists', filters] as const,
   detail: (slug: string) => ['rooms', slug] as const,
   messages: (slug: string) => ['rooms', slug, 'messages'] as const,
 };
 
-export function useRooms() {
+/** The signed-in person's rooms, newest first, matching the dashboard's search and filters. */
+export function useRooms(filters: ListRoomsQuery = {}) {
   return useQuery({
-    queryKey: roomKeys.all,
-    queryFn: () => api<RoomSummary[]>('/api/v1/rooms'),
+    queryKey: roomKeys.list(filters),
+    queryFn: () => {
+      const query = new URLSearchParams(
+        Object.entries(filters).filter((entry): entry is [string, string] => Boolean(entry[1])),
+      ).toString();
+      return api<RoomSummary[]>(`/api/v1/rooms${query ? `?${query}` : ''}`);
+    },
+    // Keep showing the last results while a new search loads, instead of flashing back to the skeleton.
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -33,7 +44,7 @@ export function useCreateRoom() {
     onSuccess: (room) => {
       // [CONCEPT: Cache Seeding] The room page opens instantly from the create response instead of refetching.
       queryClient.setQueryData(roomKeys.detail(room.slug), room);
-      void queryClient.invalidateQueries({ queryKey: roomKeys.all, exact: true });
+      void queryClient.invalidateQueries({ queryKey: roomKeys.lists });
     },
   });
 }
@@ -48,7 +59,7 @@ export function useJoinRoom(slug: string) {
       }),
     onSuccess: (room) => {
       queryClient.setQueryData(roomKeys.detail(slug), room);
-      void queryClient.invalidateQueries({ queryKey: roomKeys.all, exact: true });
+      void queryClient.invalidateQueries({ queryKey: roomKeys.lists });
     },
   });
 }
@@ -59,7 +70,7 @@ export function useDeleteRoom(slug: string) {
     mutationFn: () => api<void>(`/api/v1/rooms/${encodeURIComponent(slug)}`, { method: 'DELETE' }),
     onSuccess: () => {
       queryClient.removeQueries({ queryKey: roomKeys.detail(slug) });
-      void queryClient.invalidateQueries({ queryKey: roomKeys.all, exact: true });
+      void queryClient.invalidateQueries({ queryKey: roomKeys.lists });
     },
   });
 }

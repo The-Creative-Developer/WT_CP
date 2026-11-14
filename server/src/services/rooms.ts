@@ -3,6 +3,7 @@ import {
   MAX_ROOM_MEMBERS,
   type Language,
   type CreateRoomInput,
+  type ListRoomsQuery,
   type RoomDetail,
   type RoomRole,
   type RoomSummary,
@@ -126,9 +127,27 @@ export async function createRoom(userId: string, input: CreateRoomInput): Promis
   return toDetail(room, userId);
 }
 
-export async function listRooms(userId: string): Promise<RoomSummary[]> {
+/**
+ * [CONCEPT: Regex Injection] User text is matched literally: escaping stops "." or ".*" acting as wildcards, and
+ * stops patterns like "(a+)+$" that take exponential time to fail (ReDoS).
+ */
+export const escapeRegex = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+export async function listRooms(
+  userId: string,
+  query: ListRoomsQuery = {},
+): Promise<RoomSummary[]> {
+  const filter: mongoose.QueryFilter<RoomAttrs> = query.role
+    ? // $elemMatch: the same member entry must be me *and* have the role, not any two entries.
+      { members: { $elemMatch: { userId, role: query.role } } }
+    : { 'members.userId': userId };
+  if (query.language) filter.language = query.language;
+  // A case-insensitive "contains" rather than $text: a text index matches whole words, so typing "pai" wouldn't
+  // find "Pair". It's cheap here because the members index has already narrowed it to this person's rooms.
+  if (query.q) filter.name = { $regex: escapeRegex(query.q), $options: 'i' };
+
   // Uses the multikey index on members.userId; capped because the dashboard shows recent rooms only.
-  const rooms = await Room.find({ 'members.userId': userId }).sort({ updatedAt: -1 }).limit(50);
+  const rooms = await Room.find(filter).sort({ updatedAt: -1 }).limit(50);
   const names = await usernamesById(rooms.map((r) => r.ownerId));
   return rooms.map((room) => toSummary(room, userId, names));
 }
