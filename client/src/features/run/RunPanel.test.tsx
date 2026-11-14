@@ -35,7 +35,13 @@ function renderPanel(overrides: Partial<Runner> = {}, canRun = true) {
     liveError: null,
     ...overrides,
   };
-  render(<RunPanel runner={runner} canRun={canRun} onRun={onRun} />);
+  render(
+    <RunPanel
+      runner={runner}
+      cannotRun={canRun ? null : 'Viewers can watch runs but not start them.'}
+      onRun={onRun}
+    />,
+  );
   return { onRun };
 }
 

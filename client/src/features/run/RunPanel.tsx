@@ -25,11 +25,13 @@ const VERDICT_LABEL: Record<RunVerdict, string> = {
 
 interface RunPanelProps {
   runner: ReturnType<typeof useRoomRun>;
-  canRun: boolean;
+  /** Why Run is unavailable (a viewer, no file open, a file that doesn't run here), or null if it's available. */
+  cannotRun: string | null;
   onRun: () => void;
 }
 
-export function RunPanel({ runner, canRun, onRun }: RunPanelProps) {
+export function RunPanel({ runner, cannotRun, onRun }: RunPanelProps) {
+  const canRun = cannotRun === null;
   const { run, busy, startError, stdin, setStdin, connected, liveError } = runner;
   const titleId = useId();
   const hintId = useId();
@@ -68,7 +70,7 @@ export function RunPanel({ runner, canRun, onRun }: RunPanelProps) {
 
       {!canRun && (
         <p id={hintId} className="border-b border-border px-4 py-2 text-sm text-muted">
-          Viewers can watch runs but not start them.
+          {cannotRun}
         </p>
       )}
       <div role="alert" className="empty:hidden">

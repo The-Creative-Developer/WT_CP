@@ -1,6 +1,8 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import {
   hasRoomRole,
+  languageForPath,
+  LANGUAGES,
   MAX_CODE_BYTES,
   utf8Length,
   type CreateRunInput,
@@ -97,9 +99,14 @@ export function createRunService({
       throw HttpError.forbidden('Viewers can watch runs but not start them');
     }
     const file = await File.findOne({ _id: input.fileId, projectId: access.projectId })
-      .select('content')
+      .select('content path')
       .lean();
     if (!file) throw HttpError.notFound('File not found');
+    // A room runs one language; a notes.txt or a stray .py in a Java room would only produce a confusing error.
+    if (languageForPath(file.path) !== access.language) {
+      const { label, extension } = LANGUAGES[access.language];
+      throw new HttpError(422, `Only .${extension} files can be run in a ${label} room`);
+    }
 
     if (activeByUser.has(user.id)) {
       throw HttpError.tooManyRequests('Your last run is still going. Wait for it to finish.', 2);

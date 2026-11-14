@@ -1,10 +1,11 @@
-import { colorFor, LANGUAGES, type Language } from '@devverse/shared';
+import { colorFor } from '@devverse/shared';
 import { useEffect, useRef, useState } from 'react';
 import { MonacoBinding } from 'y-monaco';
 import { WebsocketProvider } from 'y-websocket';
 import * as Y from 'yjs';
 import { useEffectiveTheme } from '../../hooks/useEffectiveTheme';
 import { getAccessToken, refreshSession } from '../../lib/api';
+import { monacoLanguageFor } from './languages';
 import { monaco } from './monaco';
 import { cursorStyles, remoteCursors } from './remote-cursors';
 
@@ -27,13 +28,16 @@ const STATUS_LABEL: Record<Connection['state'], string> = {
 export interface CollabEditorProps {
   slug: string;
   fileId: string;
+  /** Can change while the file is open (someone renamed it); the editor stays connected. */
   path: string;
-  language: Language;
   readOnly: boolean;
   username: string;
   /** Bound to Ctrl/⌘+Enter inside the editor. */
   onRun?: () => void;
 }
+
+const editorLabel = (path: string, readOnly: boolean) =>
+  `${path}, code editor${readOnly ? ', read only' : ''}`;
 
 function collabUrl(): string {
   // Same origin in development (Vite proxies /yjs); the API's origin in production if it differs.
@@ -46,12 +50,14 @@ export default function CollabEditor({
   slug,
   fileId,
   path,
-  language,
   readOnly,
   username,
   onRun,
 }: CollabEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  // Read when the editor is created; later renames are applied by the effect below, without reconnecting.
+  const pathRef = useRef(path);
   // Read through a ref so a new callback doesn't tear down and rebuild the whole editor.
   const onRunRef = useRef(onRun);
   useEffect(() => {
@@ -88,10 +94,11 @@ export default function CollabEditor({
     };
     provider.awareness.on('change', renderCursors);
 
+    // The URI only has to be unique; the file id makes it so whatever the file is called later.
     const model = monaco.editor.createModel(
       '',
-      LANGUAGES[language].monaco,
-      monaco.Uri.parse(`file:///${fileId}/${path}`),
+      monacoLanguageFor(pathRef.current),
+      monaco.Uri.parse(`file:///${fileId}`),
     );
     const editor = monaco.editor.create(container, {
       model,
@@ -103,8 +110,9 @@ export default function CollabEditor({
       scrollBeyondLastLine: false,
       // Room above the first line for other people's name labels, which sit on top of their carets.
       padding: { top: 18 },
-      ariaLabel: `${path}, code editor${readOnly ? ', read only' : ''}`,
+      ariaLabel: editorLabel(pathRef.current, readOnly),
     });
+    editorRef.current = editor;
     // [CONCEPT: Keyboard Shortcuts] Monaco handles keys before the page sees them, so the room's Ctrl/⌘+Enter has to
     // be registered with the editor too. CtrlCmd means ⌘ on a Mac and Ctrl elsewhere.
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => onRunRef.current?.());
@@ -155,6 +163,7 @@ export default function CollabEditor({
     });
 
     return () => {
+      editorRef.current = null;
       provider.awareness.off('change', renderCursors);
       document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== cursorSheet);
       binding.destroy();
@@ -163,14 +172,24 @@ export default function CollabEditor({
       model.dispose();
       doc.destroy();
     };
-  }, [slug, fileId, path, language, readOnly, username]);
+  }, [slug, fileId, readOnly, username]);
+
+  // A rename (or move) changes the highlighting if the extension changed, and what screen readers call the editor.
+  useEffect(() => {
+    pathRef.current = path;
+    const editor = editorRef.current;
+    const model = editor?.getModel();
+    if (!editor || !model) return;
+    monaco.editor.setModelLanguage(model, monacoLanguageFor(path));
+    editor.updateOptions({ ariaLabel: editorLabel(path, readOnly) });
+  }, [path, readOnly]);
 
   useEffect(() => {
     monaco.editor.setTheme(theme === 'dark' ? 'vs-dark' : 'vs');
   }, [theme]);
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-surface">
+    <div className="flex flex-col bg-surface">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2 text-sm">
         <span className="font-mono">
           {path}

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { LANGUAGE_IDS, type Language } from '../languages';
 import type { RoomRole } from '../roles';
+import type { FileSummary } from './file';
 
 export const MAX_ROOM_MEMBERS = 10;
 export const ROOM_VISIBILITIES = ['private', 'public'] as const;
@@ -39,7 +40,8 @@ export interface RoomSummary {
 export interface RoomDetail extends RoomSummary {
   projectId: string;
   members: { id: string; username: string; role: RoomRole }[];
-  files: { id: string; path: string }[];
+  /** Sorted by path. */
+  files: FileSummary[];
   /** Only sent to the room owner, so they can share an invite link (which grants edit access). */
   inviteCode?: string;
 }

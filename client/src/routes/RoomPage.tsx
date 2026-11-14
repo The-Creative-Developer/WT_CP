@@ -1,10 +1,21 @@
-import { LANGUAGES, type RoomDetail } from '@devverse/shared';
-import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState } from 'react';
+import { languageForPath, LANGUAGES, type RoomDetail } from '@devverse/shared';
+import { lazy, Suspense, useEffect, useId, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useAuth } from '../features/auth/AuthContext';
 import { ChatPanel } from '../features/chat/ChatPanel';
 import { useChat } from '../features/chat/useChat';
+import { EditorTabs, tabId } from '../features/files/EditorTabs';
+import {
+  DeleteFileDialog,
+  FileNameDialog,
+  type DeleteFileDialogHandle,
+  type FileNameDialogHandle,
+} from '../features/files/FileDialogs';
+import { FileTree } from '../features/files/FileTree';
+import { useFileEvents, useFileMutations } from '../features/files/queries';
+import type { TreeNode } from '../features/files/tree';
+import { useOpenFiles } from '../features/files/useOpenFiles';
 import { MembersList } from '../features/rooms/MembersList';
 import { useDeleteRoom, useJoinRoom, useRoom } from '../features/rooms/queries';
 import { useRoomChannel } from '../features/rooms/useRoomChannel';
@@ -112,27 +123,67 @@ function RoomView({ room }: { room: RoomDetail }) {
   const { state } = useAuth();
   const username = state.status === 'authenticated' ? state.user.username : 'anonymous';
   const myId = state.status === 'authenticated' ? state.user.id : undefined;
-  // One file per room for now; Week 2 adds a file tree and tabs.
-  const file = room.files[0];
+  const canEdit = room.role !== 'viewer';
   const channel = useRoomChannel(room.slug);
   const runner = useRoomRun(room.slug, username, channel);
   const chat = useChat(room.slug, channel, myId);
-  const canRun = room.role !== 'viewer' && !!file;
+  // Opened on a first visit: a top-level file that runs here (main.py), not whatever sorts first (README.md).
+  const runnable = room.files.filter((f) => languageForPath(f.path) === room.language);
+  const starter = runnable.find((f) => !f.path.includes('/')) ?? runnable[0];
+  const tabs = useOpenFiles(room.slug, room.files, starter?.id);
+  const files = useFileMutations(room.slug, room.projectId);
+  const filesAnnouncement = useFileEvents(room.slug, channel, username);
+  const nameDialog = useRef<FileNameDialogHandle>(null);
+  const deleteDialog = useRef<DeleteFileDialogHandle>(null);
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const panelId = useId();
+
+  const activeFile = room.files.find((f) => f.id === tabs.activeId);
+  const openFiles = tabs.open.flatMap((id) => room.files.find((f) => f.id === id) ?? []);
+  const { label, extension } = LANGUAGES[room.language];
+  const cannotRun = !canEdit
+    ? 'Viewers can watch runs but not start them.'
+    : !activeFile
+      ? 'Open a file to run it.'
+      : languageForPath(activeFile.path) !== room.language
+        ? `Only .${extension} files can be run in a ${label} room.`
+        : null;
   const { runFile, busy } = runner;
-  const fileId = file?.id;
-  const run = useCallback(() => {
-    if (canRun && fileId && !busy) runFile(fileId);
-  }, [canRun, fileId, busy, runFile]);
+  const activeId = activeFile?.id;
+  // Not wrapped in useCallback: the React Compiler memoizes it.
+  const run = () => {
+    if (cannotRun === null && activeId && !busy) runFile(activeId);
+  };
   useRunShortcut(run);
+
+  const { openFile } = tabs;
+  async function createFile(path: string) {
+    const file = await files.createFile.mutateAsync(path);
+    openFile(file.id);
+  }
+  async function rename(node: TreeNode, path: string) {
+    if (node.kind === 'file') await files.renameFile.mutateAsync({ id: node.id, path });
+    else await files.moveFolder.mutateAsync({ from: node.path, to: path });
+  }
+  async function remove(node: TreeNode) {
+    if (node.kind === 'file') await files.deleteFile.mutateAsync(node.id);
+    else await files.deleteFolder.mutateAsync(node.path);
+  }
+  function move(node: TreeNode, to: string) {
+    setMoveError(null);
+    rename(node, to).catch((err: unknown) =>
+      setMoveError(
+        `Couldn't move ${node.name}: ${err instanceof ApiError ? err.message : 'check your connection.'}`,
+      ),
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">
       <title>{`${room.name} · DevVerse`}</title>
       <header className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-bold">{room.name}</h1>
-        <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs">
-          {LANGUAGES[room.language].label}
-        </span>
+        <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs">{label}</span>
         <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs">
           {room.visibility === 'private' ? 'Private' : 'Public'}
         </span>
@@ -143,60 +194,95 @@ function RoomView({ room }: { room: RoomDetail }) {
       </header>
 
       {/* [CONCEPT: CSS Grid Layout] Editor beside a sidebar on wide screens; stacked on phones. */}
-      <div className="grid gap-6 lg:grid-cols-[1fr_18rem]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
         {/* min-w-0 lets the grid column shrink below the editor's natural width instead of overflowing. */}
         <div className="flex min-w-0 flex-col gap-4">
-          <section aria-label="Code editor" className="min-w-0">
-            {file ? (
-              <ErrorBoundary
-                fallback={(retry) => (
-                  <div
-                    role="alert"
-                    className="flex h-[60vh] min-h-80 flex-col items-center justify-center gap-3 rounded-xl border border-danger bg-surface"
-                  >
-                    <p>The editor failed to load.</p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        // React.lazy caches a failed import, so start a fresh one before retrying.
-                        CollabEditor = lazy(loadEditor);
-                        retry();
-                      }}
-                      className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-surface-2"
-                    >
-                      Try again
-                    </button>
-                  </div>
-                )}
+          <div className="grid gap-4 md:grid-cols-[13rem_minmax(0,1fr)]">
+            <FileTree
+              files={room.files}
+              activeId={tabs.activeId}
+              canEdit={canEdit}
+              onOpen={openFile}
+              onNewFile={(folder) => nameDialog.current?.open({ kind: 'create', folder })}
+              onRename={(node) => nameDialog.current?.open({ kind: 'rename', node })}
+              onDelete={(node) => deleteDialog.current?.open(node)}
+              onMove={move}
+              announcement={filesAnnouncement}
+              error={moveError}
+            />
+            <section
+              aria-label="Code editor"
+              className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-surface"
+            >
+              <EditorTabs
+                files={openFiles}
+                activeId={tabs.activeId}
+                panelId={panelId}
+                onSelect={openFile}
+                onClose={tabs.closeFile}
+              />
+              <div
+                id={panelId}
+                role={activeFile ? 'tabpanel' : undefined}
+                aria-labelledby={activeFile ? tabId(activeFile.id) : undefined}
               >
-                <Suspense
-                  fallback={
-                    <p
-                      role="status"
-                      className="flex h-[60vh] min-h-80 items-center justify-center rounded-xl border border-border bg-surface text-muted"
+                {activeFile ? (
+                  <ErrorBoundary
+                    fallback={(retry) => (
+                      <div
+                        role="alert"
+                        className="flex h-[60vh] min-h-80 flex-col items-center justify-center gap-3 text-center"
+                      >
+                        <p>The editor failed to load.</p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // React.lazy caches a failed import, so start a fresh one before retrying.
+                            CollabEditor = lazy(loadEditor);
+                            retry();
+                          }}
+                          className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-surface-2"
+                        >
+                          Try again
+                        </button>
+                      </div>
+                    )}
+                  >
+                    <Suspense
+                      fallback={
+                        <p
+                          role="status"
+                          className="flex h-[60vh] min-h-80 items-center justify-center text-muted"
+                        >
+                          Loading the editor…
+                        </p>
+                      }
                     >
-                      Loading the editor…
-                    </p>
-                  }
-                >
-                  <CollabEditor
-                    slug={room.slug}
-                    fileId={file.id}
-                    path={file.path}
-                    language={room.language}
-                    readOnly={room.role === 'viewer'}
-                    username={username}
-                    onRun={canRun ? run : undefined}
-                  />
-                </Suspense>
-              </ErrorBoundary>
-            ) : (
-              <p className="rounded-xl border border-dashed border-border p-6 text-center text-muted">
-                This room has no files.
-              </p>
-            )}
-          </section>
-          <RunPanel runner={runner} canRun={canRun} onRun={run} />
+                      {/* A new key per file gives each its own connection and undo history. */}
+                      <CollabEditor
+                        key={activeFile.id}
+                        slug={room.slug}
+                        fileId={activeFile.id}
+                        path={activeFile.path}
+                        readOnly={!canEdit}
+                        username={username}
+                        onRun={cannotRun === null ? run : undefined}
+                      />
+                    </Suspense>
+                  </ErrorBoundary>
+                ) : (
+                  <p className="flex h-[60vh] min-h-80 items-center justify-center p-6 text-center text-muted">
+                    {room.files.length === 0
+                      ? canEdit
+                        ? 'This room has no files yet. Create one with “New file”.'
+                        : 'This room has no files yet.'
+                      : 'No file open. Choose one from Files.'}
+                  </p>
+                )}
+              </div>
+            </section>
+          </div>
+          <RunPanel runner={runner} cannotRun={cannotRun} onRun={run} />
         </div>
 
         <aside aria-label="Room details" className="flex flex-col gap-6">
@@ -211,6 +297,18 @@ function RoomView({ room }: { room: RoomDetail }) {
           {room.role === 'owner' && <DeleteRoom room={room} />}
         </aside>
       </div>
+
+      {canEdit && (
+        <>
+          <FileNameDialog
+            ref={nameDialog}
+            existing={room.files.map((f) => f.path)}
+            onCreate={createFile}
+            onRename={rename}
+          />
+          <DeleteFileDialog ref={deleteDialog} onDelete={remove} />
+        </>
+      )}
     </div>
   );
 }
