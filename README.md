@@ -12,7 +12,7 @@ Web Development course project · 3-person team · 4-week build. The full execut
 | ---- | --------------------------------------------------------------- | ------ |
 | 0    | Repo scaffold, tooling, CI, app shell, API skeleton             | ✅     |
 | 1    | Auth, rooms, Yjs sync, deployed skeleton                        | ✅     |
-| 2    | Live cursors, chat, file tree, code execution                   | ⏳     |
+| 2    | Live cursors, chat, file tree, code execution                   | ✅     |
 | 3    | WebRTC calls, AI assistant, code review, challenges, portfolios | ⏳     |
 | 4    | Stretch features, hardening, docs, demo                         | ⏳     |
 
