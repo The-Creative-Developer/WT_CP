@@ -43,6 +43,9 @@ services:
       RUNNER_URL: http://runner:5050
       RUNNER_TOKEN: ${RUNNER_TOKEN:?set RUNNER_TOKEN in deploy/.env}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Handed to browsers by GET /api/v1/turn-credentials, with credentials signed by the shared secret.
+      TURN_URLS: turn:${TURN_HOST:?set TURN_HOST in deploy/.env}:3478?transport=udp,turn:${TURN_HOST}:3478?transport=tcp
+      TURN_SECRET: ${TURN_SECRET:?set TURN_SECRET in deploy/.env}
     healthcheck:
       test:
         [
@@ -76,6 +79,53 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${RUNS_DIR:-/var/lib/devverse/runs}:${RUNS_DIR:-/var/lib/devverse/runs}
     networks: [internal]
+    restart: unless-stopped
+
+  # [CONCEPT: TURN] Relays call media between browsers that can't reach each other directly (strict NATs, networks
+  # that block UDP). Credentials are short-lived and checked against the API's shared secret, so it isn't an open
+  # relay. See docs/webrtc.md.
+  turn:
+    image: coturn/coturn:4.18.0
+    # Host networking: every relayed call needs its own UDP port, and publishing a range of ports through Docker's
+    # proxy is slow. coturn listens on 3478 (UDP and TCP) and relays on 49160-49200.
+    network_mode: host
+    command:
+      - -n # no config file: everything is below
+      - --log-file=stdout
+      - --listening-port=3478
+      - --min-port=49160
+      - --max-port=49200
+      # The VM is behind Azure's NAT: "<public IP>/<private IP>", so the relay addresses coturn hands out are public.
+      - --external-ip=${TURN_EXTERNAL_IP:?set TURN_EXTERNAL_IP in deploy/.env}
+      - --realm=devverse
+      - --use-auth-secret
+      - --static-auth-secret=${TURN_SECRET}
+      - --fingerprint
+      - --no-cli
+      - --no-tls # TURN over TLS would need port 443, which Caddy has
+      - --no-dtls
+      - --no-multicast-peers
+      - --no-software-attribute
+      # Limits: 12 relays per user (3 peers × audio/video, with room to spare), 100 in all, ~1.5 Mbps each.
+      - --user-quota=12
+      - --total-quota=100
+      - --max-bps=1500000
+      # [CONCEPT: SSRF] Without these, anyone with credentials could use the relay to reach addresses inside the VM's
+      # network: localhost, the private subnet, and Azure's metadata and platform endpoints.
+      - --denied-peer-ip=0.0.0.0-0.255.255.255
+      - --denied-peer-ip=10.0.0.0-10.255.255.255
+      - --denied-peer-ip=100.64.0.0-100.127.255.255
+      - --denied-peer-ip=127.0.0.0-127.255.255.255
+      - --denied-peer-ip=168.63.129.16
+      - --denied-peer-ip=169.254.0.0-169.254.255.255
+      - --denied-peer-ip=172.16.0.0-172.31.255.255
+      - --denied-peer-ip=192.0.0.0-192.0.0.255
+      - --denied-peer-ip=192.168.0.0-192.168.255.255
+      - --denied-peer-ip=198.18.0.0-198.19.255.255
+      - --denied-peer-ip=224.0.0.0-255.255.255.255
+      - --denied-peer-ip=::1
+      - --denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+      - --denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
     restart: unless-stopped
 
 networks:

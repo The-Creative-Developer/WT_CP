@@ -13,6 +13,7 @@ import { createDocsRouter } from './routes/docs';
 import { healthRouter } from './routes/health';
 import { createAuthService, type AuthService } from './services/auth';
 import type { LiveText } from './services/files';
+import type { IceService } from './services/ice';
 import type { RunService } from './services/runs';
 import { HttpError } from './utils/http-error';
 import { logger } from './utils/logger';
@@ -27,6 +28,7 @@ export function createApp(
   auth: AuthService = createAuthService(env),
   runs?: RunService,
   liveText?: LiveText,
+  ice?: IceService,
 ) {
   const app = express();
   const isTest = env.NODE_ENV === 'test';
@@ -92,6 +94,7 @@ export function createApp(
       },
       runs,
       liveText,
+      ice,
     }),
   );
 

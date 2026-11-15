@@ -6,6 +6,8 @@ Every room has one call, for up to 4 people. Media goes directly between browser
 | ---------------------------------------- | --------------------------------------------------------------------- |
 | `client/src/features/call/peer-link.ts`  | One `RTCPeerConnection` to one other person, with perfect negotiation |
 | `client/src/features/call/useCall.ts`    | The call: device preview, joining, the mesh, mute and camera toggles  |
+| `client/src/features/call/ice.ts`        | Fetches STUN and TURN servers from the API before joining             |
+| `server/src/services/ice.ts`             | Signs time-limited TURN credentials                                   |
 | `client/src/features/call/media.ts`      | `getUserMedia`, device lists, error messages, STUN servers            |
 | `client/src/features/call/CallPanel.tsx` | The call bar, the preview and the video grid                          |
 | `server/src/sockets/index.ts`            | `call:*` and `rtc:*` events: who's in the call, and relaying signals  |
@@ -82,7 +84,22 @@ Mute and camera-off set `track.enabled = false`. The track keeps sending, but si
 Most devices sit behind a router (NAT) and only know their private address.
 
 - **STUN** answers "what's my public address?". Peers exchange those addresses as ICE candidates and usually connect directly. A STUN server carries no media and is cheap to run. The client uses `VITE_STUN_URLS` (comma-separated), or a public Google STUN server by default.
-- **TURN** relays the media itself when no direct path works: symmetric NATs, and networks that block UDP, such as some campus and office Wi-Fi. It costs bandwidth, so it needs credentials. **Not set up yet:** the plan is coturn on the VM with short-lived credentials from `GET /turn-credentials` (coturn's `use-auth-secret`). Until then, two people on strict networks may not connect.
+- **TURN** relays the media itself when no direct path works: symmetric NATs, and networks that block UDP, such as some campus and office Wi-Fi. It costs bandwidth and could be abused, so it needs credentials.
+
+Just before joining, the browser calls `GET /api/v1/turn-credentials`, which returns the STUN servers and, if configured, the TURN relay with credentials. It reuses them until five minutes before they expire, and falls back to STUN alone if the request fails.
+
+The credentials follow coturn's `use-auth-secret` scheme (the "TURN REST API"). The API and coturn share `TURN_SECRET`:
+
+```
+username   = "<expiry, Unix seconds>:<user id>"      e.g. 1794765600:6730c2f4e1b2a3c4d5e6f701
+credential = base64(HMAC-SHA1(TURN_SECRET, username))
+```
+
+coturn recomputes the HMAC to check a login and refuses it once the expiry time has passed (4 hours by default, `TURN_TTL_SECONDS`). Nothing is stored, and a leaked credential stops working by itself. A test checks the result against `openssl dgst -sha1 -hmac`.
+
+In production, coturn runs as the `turn` service in `docker-compose.prod.yml`: UDP and TCP on 3478, relays on UDP 49160–49200, refusing to relay to private addresses. See [deployment.md](deployment.md). Without `TURN_URLS` and `TURN_SECRET` (as in development), only STUN is handed out and the API logs a warning at start-up.
+
+Not covered: networks that only allow HTTPS on port 443. That needs TURN over TLS on 443, which Caddy already uses.
 
 ## Why a mesh, and why 4
 

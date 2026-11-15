@@ -105,6 +105,7 @@ The token lives only in that page's memory, as in the app; reloading forgets it.
 | GET, PATCH    | `/reviews/{reviewId}`                          | One review with its comments; close or reopen it                    |
 | POST          | `/reviews/{reviewId}/comments`                 | Comment on a line, or reply to a thread                             |
 | PATCH         | `/reviews/{reviewId}/comments/{commentId}`     | Edit your comment; resolve or reopen a thread                       |
+| GET           | `/turn-credentials`                            | STUN and TURN servers for a call, with credentials that expire      |
 | POST, GET     | `/runs`                                        | Run a file (202); a room's recent runs                              |
 | GET           | `/runs/{id}`                                   | One run (polling fallback)                                          |
 | GET           | `/healthz`                                     | Health check, outside `/api/v1`                                     |

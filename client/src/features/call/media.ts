@@ -2,8 +2,8 @@ import type { MediaState } from '@devverse/shared';
 
 /**
  * [CONCEPT: STUN] A STUN server tells a browser its public address, so two peers behind home routers (NAT) can find
- * a direct path to each other. It never carries media. Strict networks (some campus and office Wi-Fi) block direct
- * paths altogether and also need a TURN relay, which isn't set up yet.
+ * a direct path to each other. It never carries media. The API normally supplies STUN and TURN servers (see ice.ts);
+ * these are the fallback when it can't be reached.
  */
 export function stunServers(): RTCIceServer[] {
   const urls = (import.meta.env.VITE_STUN_URLS ?? 'stun:stun.l.google.com:19302')
