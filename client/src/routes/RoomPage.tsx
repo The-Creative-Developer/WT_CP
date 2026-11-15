@@ -19,6 +19,10 @@ import { useOpenFiles } from '../features/files/useOpenFiles';
 import { MembersList } from '../features/rooms/MembersList';
 import { useDeleteRoom, useJoinRoom, useRoom } from '../features/rooms/queries';
 import { useRoomChannel } from '../features/rooms/useRoomChannel';
+import {
+  SaveVersionDialog,
+  type SaveVersionDialogHandle,
+} from '../features/review/SaveVersionDialog';
 import { RunPanel } from '../features/run/RunPanel';
 import { useRoomRun, useRunShortcut } from '../features/run/useRoomRun';
 import { ApiError } from '../lib/api';
@@ -129,6 +133,8 @@ function RoomView({ room }: { room: RoomDetail }) {
   const filesAnnouncement = useFileEvents(room.slug, channel, username);
   const nameDialog = useRef<FileNameDialogHandle>(null);
   const deleteDialog = useRef<DeleteFileDialogHandle>(null);
+  const saveDialog = useRef<SaveVersionDialogHandle>(null);
+  const [savedVersion, setSavedVersion] = useState<string | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
   const panelId = useId();
 
@@ -185,6 +191,33 @@ function RoomView({ room }: { room: RoomDetail }) {
           You're{' '}
           {room.role === 'owner' ? 'the owner' : room.role === 'editor' ? 'an editor' : 'a viewer'}
         </span>
+        <span className="ml-auto flex flex-wrap gap-2">
+          <Link
+            to={`/rooms/${room.slug}/reviews`}
+            className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-surface-2"
+          >
+            Versions and reviews
+          </Link>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => saveDialog.current?.open()}
+              className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-surface-2"
+            >
+              Save version
+            </button>
+          )}
+        </span>
+        <p role="status" className="w-full text-sm text-muted empty:hidden">
+          {savedVersion && (
+            <>
+              Saved “{savedVersion}”.{' '}
+              <Link to={`/rooms/${room.slug}/reviews`} className="text-accent underline">
+                Ask for a review
+              </Link>
+            </>
+          )}
+        </p>
       </header>
 
       {/* [CONCEPT: CSS Grid Layout] Editor beside a sidebar on wide screens; stacked on phones. */}
@@ -301,6 +334,11 @@ function RoomView({ room }: { room: RoomDetail }) {
             onRename={rename}
           />
           <DeleteFileDialog ref={deleteDialog} onDelete={remove} />
+          <SaveVersionDialog
+            ref={saveDialog}
+            projectId={room.projectId}
+            onSaved={(snapshot) => setSavedVersion(snapshot.message)}
+          />
         </>
       )}
     </div>

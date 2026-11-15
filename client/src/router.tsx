@@ -33,6 +33,14 @@ export const router = createBrowserRouter([
             // still (see RoomPage).
             lazy: async () => ({ Component: (await import('./routes/RoomPage')).RoomPage }),
           },
+          {
+            path: 'rooms/:slug/reviews',
+            lazy: async () => ({ Component: (await import('./routes/ReviewsPage')).ReviewsPage }),
+          },
+          {
+            path: 'rooms/:slug/reviews/:reviewId',
+            lazy: async () => ({ Component: (await import('./routes/ReviewPage')).ReviewPage }),
+          },
         ],
       },
       { path: '*', element: <NotFound /> },
