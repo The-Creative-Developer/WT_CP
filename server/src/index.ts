@@ -21,7 +21,7 @@ const runs = createRunService({
 });
 // Express must be listening before Socket.IO attaches: Socket.IO takes over the existing 'request' listeners and
 // passes on everything outside /socket.io/. Added afterwards, Express would also answer Socket.IO's own requests.
-server.on('request', createApp(env, auth, runs));
+server.on('request', createApp(env, auth, runs, collab.liveText));
 const sockets = attachSocketServer(server, { auth, allowedOrigins: env.CORS_ORIGINS, runs });
 
 async function start() {

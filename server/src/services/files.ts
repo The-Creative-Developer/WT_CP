@@ -19,13 +19,34 @@ const toSummary = (file: { _id: Types.ObjectId; path: string }): FileSummary => 
 });
 
 /** The caller's access to the room that owns a project. Any member may look; editors and owners may change. */
-async function projectAccess(user: AuthUser, projectId: string, edit: boolean) {
+export async function resolveProjectAccess(
+  user: AuthUser,
+  projectId: string,
+  edit: boolean,
+  viewerMessage = 'Viewers can open files but not change them',
+) {
   if (!Types.ObjectId.isValid(projectId)) throw HttpError.notFound('Project not found');
   const access = await resolveRoomAccess(user.id, { projectId }, 'Join this room to see its files');
-  if (edit && !hasRoomRole(access.role, 'editor')) {
-    throw HttpError.forbidden('Viewers can open files but not change them');
-  }
+  if (edit && !hasRoomRole(access.role, 'editor')) throw HttpError.forbidden(viewerMessage);
   return access;
+}
+
+/** A text source for a file that someone has open: what the room sees now, rather than the last save. */
+export type LiveText = (fileId: string) => Promise<string | undefined>;
+
+/**
+ * Every file of a project as the room currently sees it, sorted by path. Open files come from their live documents;
+ * the rest from MongoDB, read only after any save still in flight has finished.
+ */
+export async function currentFiles(projectId: string, liveText?: LiveText) {
+  const ids = await File.find({ projectId }, { _id: 1 }).lean();
+  const live = new Map(
+    await Promise.all(
+      ids.map(async ({ _id }) => [_id.toString(), await liveText?.(_id.toString())] as const),
+    ),
+  );
+  const files = await File.find({ projectId }, { path: 1, content: 1 }).sort({ path: 1 }).lean();
+  return files.map((f) => ({ path: f.path, content: live.get(f._id.toString()) ?? f.content }));
 }
 
 async function projectFiles(projectId: string) {
@@ -49,7 +70,7 @@ function rethrowDuplicate(err: unknown, path: string): never {
 }
 
 export async function listFiles(user: AuthUser, projectId: string): Promise<FileSummary[]> {
-  const access = await projectAccess(user, projectId, false);
+  const access = await resolveProjectAccess(user, projectId, false);
   return (await projectFiles(access.projectId)).map(toSummary);
 }
 
@@ -59,7 +80,7 @@ export async function createFile(
   projectId: string,
   path: string,
 ): Promise<FileSummary> {
-  const access = await projectAccess(user, projectId, true);
+  const access = await resolveProjectAccess(user, projectId, true);
   const existing = await projectFiles(access.projectId);
   if (existing.length >= MAX_FILES_PER_PROJECT) {
     throw HttpError.conflict(`A project can have at most ${MAX_FILES_PER_PROJECT} files`);
@@ -84,7 +105,7 @@ export async function renameFile(
   fileId: string,
   path: string,
 ): Promise<FileSummary> {
-  const access = await projectAccess(user, projectId, true);
+  const access = await resolveProjectAccess(user, projectId, true);
   const existing = await projectFiles(access.projectId);
   const file = Types.ObjectId.isValid(fileId) && existing.find((f) => f._id.equals(fileId));
   if (!file) throw HttpError.notFound('File not found');
@@ -104,7 +125,7 @@ export async function renameFile(
 }
 
 export async function deleteFile(user: AuthUser, projectId: string, fileId: string) {
-  const access = await projectAccess(user, projectId, true);
+  const access = await resolveProjectAccess(user, projectId, true);
   if (!Types.ObjectId.isValid(fileId)) throw HttpError.notFound('File not found');
   const { deletedCount } = await File.deleteOne({ _id: fileId, projectId: access.projectId });
   if (!deletedCount) throw HttpError.notFound('File not found');
@@ -117,7 +138,7 @@ export async function moveFolder(
   projectId: string,
   { from, to }: MoveFolderInput,
 ): Promise<FileSummary[]> {
-  const access = await projectAccess(user, projectId, true);
+  const access = await resolveProjectAccess(user, projectId, true);
   const existing = await projectFiles(access.projectId);
   const moving = existing.filter((f) => f.path.startsWith(`${from}/`));
   if (moving.length === 0) throw HttpError.notFound('Folder not found');
@@ -146,7 +167,7 @@ export async function moveFolder(
 }
 
 export async function deleteFolder(user: AuthUser, projectId: string, path: string) {
-  const access = await projectAccess(user, projectId, true);
+  const access = await resolveProjectAccess(user, projectId, true);
   const existing = await projectFiles(access.projectId);
   const ids = existing.filter((f) => f.path.startsWith(`${path}/`)).map((f) => f._id);
   if (ids.length === 0) throw HttpError.notFound('Folder not found');

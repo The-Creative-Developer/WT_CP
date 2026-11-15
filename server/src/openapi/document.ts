@@ -1,17 +1,23 @@
 import {
+  createCommentSchema,
   createFileSchema,
+  createReviewSchema,
   createRoomSchema,
   createRunSchema,
+  createSnapshotSchema,
   folderQuerySchema,
   joinRoomSchema,
   listMessagesQuerySchema,
+  listReviewsQuerySchema,
   listRoomsQuerySchema,
   listRunsQuerySchema,
   loginSchema,
   moveFolderSchema,
   registerSchema,
   renameFileSchema,
+  updateCommentSchema,
   updateMeSchema,
+  updateReviewSchema,
 } from '@devverse/shared';
 import { z } from 'zod';
 import { REFRESH_COOKIE } from '../controllers/auth';
@@ -36,6 +42,11 @@ export const requestSchemas = {
   RenameFileInput: renameFileSchema,
   MoveFolderInput: moveFolderSchema,
   CreateRunInput: createRunSchema,
+  CreateSnapshotInput: createSnapshotSchema,
+  CreateReviewInput: createReviewSchema,
+  UpdateReviewInput: updateReviewSchema,
+  CreateCommentInput: createCommentSchema,
+  UpdateCommentInput: updateCommentSchema,
 };
 
 type SchemaName = keyof typeof responseSchemas | keyof typeof requestSchemas;
@@ -86,6 +97,8 @@ type ErrorStatus = 401 | 403 | 404 | 409 | 422 | 429 | 503;
 interface Success {
   description: string;
   schema?: JsonSchema;
+  /** Defaults to application/json. */
+  contentType?: string;
   headers?: Header[];
 }
 
@@ -112,6 +125,10 @@ const tags = {
     'Collaborative coding rooms: create, find, join and delete them, and read their chat history.',
   Files:
     "A room's project files. Contents are edited live over the Yjs WebSocket, not through these endpoints.",
+  Versions:
+    'Snapshots: saved copies of a whole project, like commits, plus downloading the project as a ZIP.',
+  Reviews:
+    'Code review: a version compared with an earlier one, with comment threads on its lines. Editors ask for reviews; any member of the room can comment.',
   Runs: 'Running a file in a sandbox. Output streams to the room over Socket.IO; these endpoints start runs and are the polling fallback.',
 } as const;
 type Tag = keyof typeof tags;
@@ -121,6 +138,9 @@ const pathParams: Record<string, string> = {
   projectId: "The room's project id (`projectId` in the room details).",
   fileId: 'The file id.',
   id: 'The run id.',
+  snapshotId: 'The version (snapshot) id.',
+  reviewId: 'The review id.',
+  commentId: 'The comment id.',
 };
 
 const headers = {
@@ -138,6 +158,14 @@ const headers = {
   },
   CacheControlNoStore: {
     description: '`no-store`: tokens and live data must not be cached.',
+    schema: { type: 'string' },
+  },
+  CacheControlImmutable: {
+    description: '`private, max-age=31536000, immutable`: a saved version never changes.',
+    schema: { type: 'string' },
+  },
+  ContentDisposition: {
+    description: '`attachment; filename=<room-slug>.zip`: save the file rather than show it.',
     schema: { type: 'string' },
   },
   RetryAfter: {
@@ -179,6 +207,8 @@ function headerName(name: Header): string {
     SetRefreshCookie: 'Set-Cookie',
     ClearRefreshCookie: 'Set-Cookie',
     CacheControlNoStore: 'Cache-Control',
+    CacheControlImmutable: 'Cache-Control',
+    ContentDisposition: 'Content-Disposition',
     RetryAfter: 'Retry-After',
     RateLimitPolicy: 'RateLimit-Policy',
     WWWAuthenticate: 'WWW-Authenticate',
@@ -462,6 +492,158 @@ const operations: Record<
       errors: [401, 403, 404, 422],
     },
   },
+  '/projects/{projectId}/snapshots': {
+    get: {
+      operationId: 'listSnapshots',
+      tag: 'Versions',
+      summary: "A project's saved versions",
+      description: 'Newest first, at most 100, without the files.',
+      responses: { 200: { description: 'The versions.', schema: arrayOf('SnapshotSummary') } },
+      errors: [401, 403, 404],
+    },
+    post: {
+      operationId: 'createSnapshot',
+      tag: 'Versions',
+      summary: 'Save a version',
+      description:
+        "Copies every file as the room sees it right now, including edits that haven't been autosaved yet. Editors and owners only; at most 8 MB of files, and 10 versions a minute per account.",
+      body: 'CreateSnapshotInput',
+      example: { message: 'Loop works now' },
+      responses: {
+        201: {
+          description: 'The new version, with its files.',
+          schema: ref('SnapshotDetail'),
+          headers: ['Location'],
+        },
+      },
+      errors: [401, 403, 404, 409, 422, 429],
+    },
+  },
+  '/projects/{projectId}/snapshots/{snapshotId}': {
+    get: {
+      operationId: 'getSnapshot',
+      tag: 'Versions',
+      summary: 'One version, with its files',
+      responses: {
+        200: {
+          description: 'The version.',
+          schema: ref('SnapshotDetail'),
+          headers: ['CacheControlImmutable'],
+        },
+      },
+      errors: [401, 403, 404],
+    },
+  },
+  '/projects/{projectId}/export.zip': {
+    get: {
+      operationId: 'exportProject',
+      tag: 'Versions',
+      summary: 'Download the project as a ZIP',
+      description:
+        'The current files, inside a folder named after the room. The body is streamed (chunked), so there is no Content-Length.',
+      responses: {
+        200: {
+          description: 'The ZIP file.',
+          contentType: 'application/zip',
+          schema: { type: 'string', contentMediaType: 'application/zip' },
+          headers: ['ContentDisposition', 'CacheControlNoStore'],
+        },
+      },
+      errors: [401, 403, 404],
+    },
+  },
+  '/reviews': {
+    post: {
+      operationId: 'createReview',
+      tag: 'Reviews',
+      summary: 'Ask for a review of a version',
+      description:
+        'Compares the version with `baseSnapshotId`: by default the version saved just before it, or nothing (`null`). Editors and owners only.',
+      body: 'CreateReviewInput',
+      example: { snapshotId: '6730c2f4e1b2a3c4d5e6f701' },
+      responses: {
+        201: {
+          description: 'The new review.',
+          schema: ref('ReviewDetail'),
+          headers: ['Location'],
+        },
+      },
+      errors: [401, 403, 404, 422],
+    },
+    get: {
+      operationId: 'listReviews',
+      tag: 'Reviews',
+      summary: "A project's reviews",
+      description: 'Newest first, at most 50, without the comments.',
+      query: listReviewsQuerySchema,
+      responses: {
+        200: {
+          description: 'The reviews.',
+          schema: arrayOf('ReviewSummary'),
+          headers: ['CacheControlNoStore'],
+        },
+      },
+      errors: [401, 403, 404, 422],
+    },
+  },
+  '/reviews/{reviewId}': {
+    get: {
+      operationId: 'getReview',
+      tag: 'Reviews',
+      summary: 'One review, with every comment',
+      responses: {
+        200: {
+          description: 'The review.',
+          schema: ref('ReviewDetail'),
+          headers: ['CacheControlNoStore'],
+        },
+      },
+      errors: [401, 403, 404],
+    },
+    patch: {
+      operationId: 'updateReview',
+      tag: 'Reviews',
+      summary: 'Close or reopen a review',
+      description:
+        'Whoever asked for the review, or the room owner. A closed review is read-only: no new comments, edits or resolving.',
+      body: 'UpdateReviewInput',
+      example: { status: 'closed' },
+      responses: { 200: { description: 'The review.', schema: ref('ReviewDetail') } },
+      errors: [401, 403, 404, 422],
+    },
+  },
+  '/reviews/{reviewId}/comments': {
+    post: {
+      operationId: 'addComment',
+      tag: 'Reviews',
+      summary: 'Comment on a line, or reply to a thread',
+      description:
+        'A new thread needs `path` and `line` (a line of that file in the reviewed version); a reply needs `parentId` instead. Any member of the room, viewers included. At most 500 comments per review.',
+      body: 'CreateCommentInput',
+      example: { path: 'main.py', line: 3, body: 'Could this loop be a comprehension?' },
+      responses: {
+        201: {
+          description: 'The new comment.',
+          schema: ref('ReviewComment'),
+          headers: ['Location'],
+        },
+      },
+      errors: [401, 403, 404, 409, 422],
+    },
+  },
+  '/reviews/{reviewId}/comments/{commentId}': {
+    patch: {
+      operationId: 'updateComment',
+      tag: 'Reviews',
+      summary: 'Edit a comment, or resolve its thread',
+      description:
+        "Only the author can change `body`. `resolved` goes on a thread's first comment and can be set by editors, whoever asked for the review, or whoever started the thread.",
+      body: 'UpdateCommentInput',
+      example: { resolved: true },
+      responses: { 200: { description: 'The comment.', schema: ref('ReviewComment') } },
+      errors: [401, 403, 404, 409, 422],
+    },
+  },
   '/runs': {
     post: {
       operationId: 'startRun',
@@ -576,12 +758,12 @@ function buildOperation(path: string, op: Operation) {
     responses: {
       ...Object.fromEntries(
         Object.entries(op.responses).map(
-          ([status, { description, schema, headers: names = [] }]) => [
+          ([status, { description, schema, contentType, headers: names = [] }]) => [
             status,
             {
               description,
               headers: withHeaders(names),
-              ...(schema ? { content: { 'application/json': { schema } } } : {}),
+              ...(schema ? { content: { [contentType ?? 'application/json']: { schema } } } : {}),
             },
           ],
         ),

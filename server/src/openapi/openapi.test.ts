@@ -158,6 +158,65 @@ describe('responses match the documented schemas', () => {
     expect(page.body.messages).toHaveLength(1);
   });
 
+  it('versions and reviews', async () => {
+    const alice = await signUp('alice');
+    const room = await request(app)
+      .post('/api/v1/rooms')
+      .set('Authorization', alice.header)
+      .send({ name: 'Review Contract', language: 'python' });
+    const base = `/api/v1/projects/${room.body.projectId}`;
+
+    const v1 = await request(app)
+      .post(`${base}/snapshots`)
+      .set('Authorization', alice.header)
+      .send({ message: 'First' });
+    expect(v1.status).toBe(201);
+    expectMatches(schemas.snapshotDetail, v1.body);
+    const v2 = await request(app)
+      .post(`${base}/snapshots`)
+      .set('Authorization', alice.header)
+      .send({ message: 'Second' });
+    const list = await request(app).get(`${base}/snapshots`).set('Authorization', alice.header);
+    expectMatches(schemas.snapshotSummary.array().length(2), list.body);
+    const one = await request(app)
+      .get(`${base}/snapshots/${v1.body.id}`)
+      .set('Authorization', alice.header);
+    expectMatches(schemas.snapshotDetail, one.body);
+
+    const review = await request(app)
+      .post('/api/v1/reviews')
+      .set('Authorization', alice.header)
+      .send({ snapshotId: v2.body.id });
+    expect(review.status).toBe(201);
+    expectMatches(schemas.reviewDetail, review.body);
+    const reviews = `/api/v1/reviews/${review.body.id}`;
+
+    const comment = await request(app)
+      .post(`${reviews}/comments`)
+      .set('Authorization', alice.header)
+      .send({ path: 'main.py', line: 1, body: 'Looks good' });
+    expect(comment.status).toBe(201);
+    expectMatches(schemas.reviewComment, comment.body);
+    const resolved = await request(app)
+      .patch(`${reviews}/comments/${comment.body.id}`)
+      .set('Authorization', alice.header)
+      .send({ resolved: true, body: 'Looks great' });
+    expectMatches(schemas.reviewComment, resolved.body);
+
+    const detail = await request(app).get(reviews).set('Authorization', alice.header);
+    expectMatches(schemas.reviewDetail, detail.body);
+    const listed = await request(app)
+      .get('/api/v1/reviews')
+      .query({ projectId: room.body.projectId })
+      .set('Authorization', alice.header);
+    expectMatches(schemas.reviewSummary.array().length(1), listed.body);
+    const closed = await request(app)
+      .patch(reviews)
+      .set('Authorization', alice.header)
+      .send({ status: 'closed' });
+    expectMatches(schemas.reviewDetail, closed.body);
+  });
+
   it('errors are problem details', async () => {
     const { header } = await signUp('carol');
     const missing = await request(app).get('/api/v1/rooms/nope').set('Authorization', header);

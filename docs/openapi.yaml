@@ -27,6 +27,10 @@ tags:
     description: "Collaborative coding rooms: create, find, join and delete them, and read their chat history."
   - name: Files
     description: A room's project files. Contents are edited live over the Yjs WebSocket, not through these endpoints.
+  - name: Versions
+    description: "Snapshots: saved copies of a whole project, like commits, plus downloading the project as a ZIP."
+  - name: Reviews
+    description: "Code review: a version compared with an earlier one, with comment threads on its lines. Editors ask for reviews; any member of the room can comment."
   - name: Runs
     description: Running a file in a sandbox. Output streams to the room over Socket.IO; these endpoints start runs and are the polling fallback.
 security:
@@ -689,6 +693,397 @@ paths:
           $ref: "#/components/responses/NotFound"
         "422":
           $ref: "#/components/responses/ValidationFailed"
+  /projects/{projectId}/snapshots:
+    get:
+      operationId: listSnapshots
+      tags:
+        - Versions
+      summary: A project's saved versions
+      description: Newest first, at most 100, without the files.
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          description: The room's project id (`projectId` in the room details).
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The versions.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SnapshotSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createSnapshot
+      tags:
+        - Versions
+      summary: Save a version
+      description: Copies every file as the room sees it right now, including edits that haven't been autosaved yet. Editors and owners only; at most 8 MB of files, and 10 versions a minute per account.
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          description: The room's project id (`projectId` in the room details).
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSnapshotInput"
+            example:
+              message: Loop works now
+      responses:
+        "201":
+          description: The new version, with its files.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /projects/{projectId}/snapshots/{snapshotId}:
+    get:
+      operationId: getSnapshot
+      tags:
+        - Versions
+      summary: One version, with its files
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          description: The room's project id (`projectId` in the room details).
+          schema:
+            type: string
+        - name: snapshotId
+          in: path
+          required: true
+          description: The version (snapshot) id.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The version.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlImmutable"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /projects/{projectId}/export.zip:
+    get:
+      operationId: exportProject
+      tags:
+        - Versions
+      summary: Download the project as a ZIP
+      description: The current files, inside a folder named after the room. The body is streamed (chunked), so there is no Content-Length.
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          description: The room's project id (`projectId` in the room details).
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The ZIP file.
+          headers:
+            Content-Disposition:
+              $ref: "#/components/headers/ContentDisposition"
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlNoStore"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/zip:
+              schema:
+                type: string
+                contentMediaType: application/zip
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /reviews:
+    post:
+      operationId: createReview
+      tags:
+        - Reviews
+      summary: Ask for a review of a version
+      description: "Compares the version with `baseSnapshotId`: by default the version saved just before it, or nothing (`null`). Editors and owners only."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateReviewInput"
+            example:
+              snapshotId: 6730c2f4e1b2a3c4d5e6f701
+      responses:
+        "201":
+          description: The new review.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+    get:
+      operationId: listReviews
+      tags:
+        - Reviews
+      summary: A project's reviews
+      description: Newest first, at most 50, without the comments.
+      parameters:
+        - name: projectId
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-f\d]{24}$
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - open
+              - closed
+      responses:
+        "200":
+          description: The reviews.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlNoStore"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReviewSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+  /reviews/{reviewId}:
+    get:
+      operationId: getReview
+      tags:
+        - Reviews
+      summary: One review, with every comment
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          description: The review id.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The review.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlNoStore"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateReview
+      tags:
+        - Reviews
+      summary: Close or reopen a review
+      description: "Whoever asked for the review, or the room owner. A closed review is read-only: no new comments, edits or resolving."
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          description: The review id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateReviewInput"
+            example:
+              status: closed
+      responses:
+        "200":
+          description: The review.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+  /reviews/{reviewId}/comments:
+    post:
+      operationId: addComment
+      tags:
+        - Reviews
+      summary: Comment on a line, or reply to a thread
+      description: A new thread needs `path` and `line` (a line of that file in the reviewed version); a reply needs `parentId` instead. Any member of the room, viewers included. At most 500 comments per review.
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          description: The review id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCommentInput"
+            example:
+              path: main.py
+              line: 3
+              body: Could this loop be a comprehension?
+      responses:
+        "201":
+          description: The new comment.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewComment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+  /reviews/{reviewId}/comments/{commentId}:
+    patch:
+      operationId: updateComment
+      tags:
+        - Reviews
+      summary: Edit a comment, or resolve its thread
+      description: Only the author can change `body`. `resolved` goes on a thread's first comment and can be set by editors, whoever asked for the review, or whoever started the thread.
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          description: The review id.
+          schema:
+            type: string
+        - name: commentId
+          in: path
+          required: true
+          description: The comment id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCommentInput"
+            example:
+              resolved: true
+      responses:
+        "200":
+          description: The comment.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewComment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
   /runs:
     post:
       operationId: startRun
@@ -1295,6 +1690,338 @@ components:
         - error
         - createdAt
       additionalProperties: false
+    SnapshotSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          pattern: ^[a-f\d]{24}$
+          examples:
+            - 6730c2f4e1b2a3c4d5e6f701
+        projectId:
+          type: string
+          pattern: ^[a-f\d]{24}$
+          examples:
+            - 6730c2f4e1b2a3c4d5e6f701
+        message:
+          type: string
+          examples:
+            - Loop works now
+        author:
+          type: object
+          properties:
+            id:
+              type: string
+              pattern: ^[a-f\d]{24}$
+              examples:
+                - 6730c2f4e1b2a3c4d5e6f701
+            username:
+              type: string
+              examples:
+                - ada
+          required:
+            - id
+            - username
+          additionalProperties: false
+        fileCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+          examples:
+            - 2026-11-15T09:30:00.000Z
+      required:
+        - id
+        - projectId
+        - message
+        - author
+        - fileCount
+        - createdAt
+      additionalProperties: false
+    SnapshotDetail:
+      type: object
+      properties:
+        id:
+          type: string
+          pattern: ^[a-f\d]{24}$
+          examples:
+            - 6730c2f4e1b2a3c4d5e6f701
+        projectId:
+          type: string
+          pattern: ^[a-f\d]{24}$
+          examples:
+            - 6730c2f4e1b2a3c4d5e6f701
+        message:
+          type: string
+          examples:
+            - Loop works now
+        author:
+          type: object
+          properties:
+            id:
+              type: string
+              pattern: ^[a-f\d]{24}$
+              examples:
+                - 6730c2f4e1b2a3c4d5e6f701
+            username:
+              type: string
+              examples:
+                - ada
+          required:
+            - id
+            - username
+          additionalProperties: false
+        fileCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+          examples:
+            - 2026-11-15T09:30:00.000Z
+        files:
+          type: array
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+                examples:
+                  - main.py
+              content:
+                type: string
+                examples:
+                  - |
+                    print("Hello")
+            required:
+              - path
+              - content
+            additionalProperties: false
+          description: Sorted by path.
+      required:
+        - id
+        - projectId
+        - message
+        - author
+        - fileCount
+        - createdAt
+        - files
+      additionalProperties: false
+    ReviewComment:
+      type: object
+      properties:
+        id:
+          type: string
+          pattern: ^[a-f\d]{24}$
+          examples:
+            - 6730c2f4e1b2a3c4d5e6f701
+        author:
+          type: object
+          properties:
+            id:
+              type: string
+              pattern: ^[a-f\d]{24}$
+              examples:
+                - 6730c2f4e1b2a3c4d5e6f701
+            username:
+              type: string
+              examples:
+                - ada
+          required:
+            - id
+            - username
+          additionalProperties: false
+        path:
+          type: string
+          description: A file in the reviewed version.
+          examples:
+            - main.py
+        line:
+          type: integer
+          description: 1-based line in the reviewed version's copy of the file.
+          examples:
+            - 3
+        body:
+          type: string
+          examples:
+            - Could this loop be a comprehension?
+        parentId:
+          anyOf:
+            - type: string
+              pattern: ^[a-f\d]{24}$
+              examples:
+                - 6730c2f4e1b2a3c4d5e6f701
+            - type: "null"
+          description: The thread's first comment; null if this one starts the thread.
+        resolved:
+          type: boolean
+          description: Set on the first comment of a thread, for the whole thread.
+        createdAt:
+          type: string
+          format: date-time
+          examples:
+            - 2026-11-15T09:30:00.000Z
+        editedAt:
+          anyOf:
+            - type: string
+              format: date-time
+              examples:
+                - 2026-11-15T09:30:00.000Z
+            - type: "null"
+      required:
+        - id
+        - author
+        - path
+        - line
+        - body
+        - parentId
+        - resolved
+        - createdAt
+        - editedAt
+      additionalProperties: false
+    ReviewSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          pattern: ^[a-f\d]{24}$
+          examples:
+            - 6730c2f4e1b2a3c4d5e6f701
+        projectId:
+          type: string
+          pattern: ^[a-f\d]{24}$
+          examples:
+            - 6730c2f4e1b2a3c4d5e6f701
+        snapshot:
+          description: The version under review.
+          $ref: "#/components/schemas/SnapshotSummary"
+        base:
+          anyOf:
+            - $ref: "#/components/schemas/SnapshotSummary"
+            - type: "null"
+          description: What it is compared with; null means an empty project.
+        requester:
+          type: object
+          properties:
+            id:
+              type: string
+              pattern: ^[a-f\d]{24}$
+              examples:
+                - 6730c2f4e1b2a3c4d5e6f701
+            username:
+              type: string
+              examples:
+                - ada
+          required:
+            - id
+            - username
+          additionalProperties: false
+        status:
+          type: string
+          enum:
+            - open
+            - closed
+        openThreads:
+          type: integer
+          description: Threads that aren't resolved yet.
+        commentCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+          examples:
+            - 2026-11-15T09:30:00.000Z
+        updatedAt:
+          type: string
+          format: date-time
+          examples:
+            - 2026-11-15T09:30:00.000Z
+      required:
+        - id
+        - projectId
+        - snapshot
+        - base
+        - requester
+        - status
+        - openThreads
+        - commentCount
+        - createdAt
+        - updatedAt
+      additionalProperties: false
+    ReviewDetail:
+      type: object
+      properties:
+        id:
+          type: string
+          pattern: ^[a-f\d]{24}$
+          examples:
+            - 6730c2f4e1b2a3c4d5e6f701
+        projectId:
+          type: string
+          pattern: ^[a-f\d]{24}$
+          examples:
+            - 6730c2f4e1b2a3c4d5e6f701
+        snapshot:
+          description: The version under review.
+          $ref: "#/components/schemas/SnapshotSummary"
+        base:
+          anyOf:
+            - $ref: "#/components/schemas/SnapshotSummary"
+            - type: "null"
+          description: What it is compared with; null means an empty project.
+        requester:
+          type: object
+          properties:
+            id:
+              type: string
+              pattern: ^[a-f\d]{24}$
+              examples:
+                - 6730c2f4e1b2a3c4d5e6f701
+            username:
+              type: string
+              examples:
+                - ada
+          required:
+            - id
+            - username
+          additionalProperties: false
+        status:
+          type: string
+          enum:
+            - open
+            - closed
+        openThreads:
+          type: integer
+          description: Threads that aren't resolved yet.
+        commentCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+          examples:
+            - 2026-11-15T09:30:00.000Z
+        updatedAt:
+          type: string
+          format: date-time
+          examples:
+            - 2026-11-15T09:30:00.000Z
+        comments:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReviewComment"
+          description: Oldest first.
+      required:
+        - id
+        - projectId
+        - snapshot
+        - base
+        - requester
+        - status
+        - openThreads
+        - commentCount
+        - createdAt
+        - updatedAt
+        - comments
+      additionalProperties: false
     Problem:
       type: object
       properties:
@@ -1458,6 +2185,66 @@ components:
       required:
         - roomSlug
         - fileId
+    CreateSnapshotInput:
+      type: object
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 120
+      required:
+        - message
+    CreateReviewInput:
+      type: object
+      properties:
+        snapshotId:
+          type: string
+          pattern: ^[a-f\d]{24}$
+        baseSnapshotId:
+          anyOf:
+            - type: string
+              pattern: ^[a-f\d]{24}$
+            - type: "null"
+      required:
+        - snapshotId
+    UpdateReviewInput:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - open
+            - closed
+      required:
+        - status
+    CreateCommentInput:
+      type: object
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        path:
+          type: string
+          minLength: 1
+          maxLength: 200
+        line:
+          type: integer
+          minimum: 1
+        parentId:
+          type: string
+          pattern: ^[a-f\d]{24}$
+      required:
+        - body
+    UpdateCommentInput:
+      type: object
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        resolved:
+          type: boolean
   headers:
     Location:
       description: Where the new resource can be found.
@@ -1473,6 +2260,14 @@ components:
         type: string
     CacheControlNoStore:
       description: "`no-store`: tokens and live data must not be cached."
+      schema:
+        type: string
+    CacheControlImmutable:
+      description: "`private, max-age=31536000, immutable`: a saved version never changes."
+      schema:
+        type: string
+    ContentDisposition:
+      description: "`attachment; filename=<room-slug>.zip`: save the file rather than show it."
       schema:
         type: string
     RetryAfter:

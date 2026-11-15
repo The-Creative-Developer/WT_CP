@@ -72,31 +72,42 @@ The token lives only in that page's memory, as in the app; reloading forgets it.
 
 `title` is written for people and can be shown as is. `requestId` matches the `X-Request-Id` header and the server logs.
 
-**Rate limits.** 300 requests a minute per IP across `/api`. Sign-in attempts have a tighter limit (10 failures per 15 minutes per IP), and runs are limited per account. The `RateLimit` and `RateLimit-Policy` headers (IETF draft 8) say how much is left.
+**Rate limits.** 300 requests a minute per IP across `/api`. Sign-in attempts have a tighter limit (10 failures per 15 minutes per IP), and runs and saved versions are limited per account. The `RateLimit` and `RateLimit-Policy` headers (IETF draft 8) say how much is left.
 
 **Pagination.** Chat history uses cursor pagination: `GET /rooms/{slug}/messages?limit=30` returns `nextCursor`; pass it back as `before` for the next, older page. Unlike `skip`, a cursor stays fast deep into the history and doesn't repeat or miss messages when new ones arrive.
 
-**Caching.** Responses carrying tokens or live data (`/auth/*`, runs, chat) send `Cache-Control: no-store`.
+**Caching.** Responses carrying tokens or live data (`/auth/*`, runs, chat, reviews) send `Cache-Control: no-store`. A saved version never changes, so `GET /projects/{projectId}/snapshots/{snapshotId}` sends `Cache-Control: private, max-age=31536000, immutable` and the browser reuses it without asking again.
+
+**Downloads.** `GET /projects/{projectId}/export.zip` streams the ZIP as it is compressed, so it has no `Content-Length`. `Content-Disposition: attachment` makes browsers save it. It needs the Bearer token like everything else, so the app fetches it and saves the result rather than linking to it.
+
+**Code review.** A snapshot is a copy of every file at one moment, like a commit. A review compares one snapshot with an earlier one (by default the one saved just before it). Comments start threads on a line of the reviewed snapshot; replies name the thread with `parentId`. Editors save snapshots and ask for reviews; anyone in the room, viewers included, can comment. Whoever asked for the review, or the room owner, can close it, which makes it read-only.
 
 ## Endpoints
 
-| Method        | Path                                   | Purpose                                                             |
-| ------------- | -------------------------------------- | ------------------------------------------------------------------- |
-| POST          | `/auth/register`                       | Create an account and sign in (201)                                 |
-| POST          | `/auth/login`                          | Sign in                                                             |
-| POST          | `/auth/refresh`                        | New access token from the refresh cookie                            |
-| POST          | `/auth/logout`                         | Sign out (204)                                                      |
-| GET, PATCH    | `/users/me`                            | Your profile                                                        |
-| GET, POST     | `/rooms`                               | Your rooms (with `q`, `language` and `role` filters); create a room |
-| GET, DELETE   | `/rooms/{slug}`                        | One room; delete it (owner only)                                    |
-| POST          | `/rooms/{slug}/join`                   | Join with an invite code, or a public room as a viewer              |
-| GET           | `/rooms/{slug}/messages`               | Chat history, newest first                                          |
-| GET, POST     | `/projects/{projectId}/files`          | List files; create one                                              |
-| PATCH, DELETE | `/projects/{projectId}/files/{fileId}` | Rename or move a file; delete it                                    |
-| PATCH, DELETE | `/projects/{projectId}/folders`        | Rename or move a folder; delete it with its contents                |
-| POST, GET     | `/runs`                                | Run a file (202); a room's recent runs                              |
-| GET           | `/runs/{id}`                           | One run (polling fallback)                                          |
-| GET           | `/healthz`                             | Health check, outside `/api/v1`                                     |
+| Method        | Path                                           | Purpose                                                             |
+| ------------- | ---------------------------------------------- | ------------------------------------------------------------------- |
+| POST          | `/auth/register`                               | Create an account and sign in (201)                                 |
+| POST          | `/auth/login`                                  | Sign in                                                             |
+| POST          | `/auth/refresh`                                | New access token from the refresh cookie                            |
+| POST          | `/auth/logout`                                 | Sign out (204)                                                      |
+| GET, PATCH    | `/users/me`                                    | Your profile                                                        |
+| GET, POST     | `/rooms`                                       | Your rooms (with `q`, `language` and `role` filters); create a room |
+| GET, DELETE   | `/rooms/{slug}`                                | One room; delete it (owner only)                                    |
+| POST          | `/rooms/{slug}/join`                           | Join with an invite code, or a public room as a viewer              |
+| GET           | `/rooms/{slug}/messages`                       | Chat history, newest first                                          |
+| GET, POST     | `/projects/{projectId}/files`                  | List files; create one                                              |
+| PATCH, DELETE | `/projects/{projectId}/files/{fileId}`         | Rename or move a file; delete it                                    |
+| PATCH, DELETE | `/projects/{projectId}/folders`                | Rename or move a folder; delete it with its contents                |
+| GET, POST     | `/projects/{projectId}/snapshots`              | A project's saved versions; save one                                |
+| GET           | `/projects/{projectId}/snapshots/{snapshotId}` | One version, with its files                                         |
+| GET           | `/projects/{projectId}/export.zip`             | Download the current files as a ZIP (streamed)                      |
+| POST, GET     | `/reviews`                                     | Ask for a review of a version; a project's reviews                  |
+| GET, PATCH    | `/reviews/{reviewId}`                          | One review with its comments; close or reopen it                    |
+| POST          | `/reviews/{reviewId}/comments`                 | Comment on a line, or reply to a thread                             |
+| PATCH         | `/reviews/{reviewId}/comments/{commentId}`     | Edit your comment; resolve or reopen a thread                       |
+| POST, GET     | `/runs`                                        | Run a file (202); a room's recent runs                              |
+| GET           | `/runs/{id}`                                   | One run (polling fallback)                                          |
+| GET           | `/healthz`                                     | Health check, outside `/api/v1`                                     |
 
 Request and response shapes, limits and every error each endpoint can return are in the [Swagger UI](http://localhost:5173/api/docs) and [`openapi.yaml`](openapi.yaml).
 

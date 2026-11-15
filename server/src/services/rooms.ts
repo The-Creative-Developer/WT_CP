@@ -12,8 +12,10 @@ import mongoose, { Types } from 'mongoose';
 import { File } from '../models/file';
 import { Message } from '../models/message';
 import { Project } from '../models/project';
+import { Review } from '../models/review';
 import { Room, type RoomAttrs } from '../models/room';
 import { Run } from '../models/run';
+import { Snapshot } from '../models/snapshot';
 import { User } from '../models/user';
 import { HttpError } from '../utils/http-error';
 import { STARTER_FILES } from './starter-files';
@@ -266,6 +268,8 @@ export async function deleteRoom(userId: string, slug: string): Promise<void> {
     await Room.deleteOne({ _id: room._id }, { session });
     await File.deleteMany({ projectId: room.projectId }, { session });
     await Project.deleteOne({ _id: room.projectId }, { session });
+    await Snapshot.deleteMany({ projectId: room.projectId }, { session });
+    await Review.deleteMany({ projectId: room.projectId }, { session });
     // Without this a deleted room's runs would linger until their TTL. A run still in progress is fine: it finishes
     // in memory and its final save simply matches nothing.
     await Run.deleteMany({ roomId: room._id }, { session });
