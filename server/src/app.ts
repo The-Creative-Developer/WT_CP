@@ -9,6 +9,7 @@ import type { Env } from './config/env';
 import { errorHandler, notFound } from './middleware/error-handler';
 import { requestId } from './middleware/request-id';
 import { createApiRouter } from './routes';
+import { createDocsRouter } from './routes/docs';
 import { healthRouter } from './routes/health';
 import { createAuthService, type AuthService } from './services/auth';
 import type { RunService } from './services/runs';
@@ -76,6 +77,8 @@ export function createApp(
       handler: (_req, _res, next) => next(new HttpError(429, 'Too many requests, slow down')),
     }),
   );
+  // [CONCEPT: API Documentation] Swagger UI at /api/docs, rendering the OpenAPI document at /api/docs/openapi.json.
+  app.use('/api/docs', createDocsRouter());
   app.use(
     '/api/v1',
     createApiRouter({

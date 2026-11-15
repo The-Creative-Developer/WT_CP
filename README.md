@@ -46,7 +46,8 @@ npm run db:up        # MongoDB single-node replica set in Docker
 npm run dev          # API on :4000, client on :5173
 ```
 
-Open http://localhost:5173. The footer shows whether the API and database are reachable.
+Open http://localhost:5173. The footer shows whether the API and database are reachable. The REST API's interactive
+docs are at http://localhost:5173/api/docs.
 
 To build the code-execution sandbox images (needed to run code):
 
@@ -71,6 +72,7 @@ Runs are killed after 5 seconds; C++ and Java get 3 more, because they compile f
 | `npm run typecheck`               | TypeScript across all workspaces                                                       |
 | `npm run build`                   | Production builds                                                                      |
 | `npm run concepts`                | Regenerates [docs/CONCEPTS.md](docs/CONCEPTS.md) from `[CONCEPT: …]` tags              |
+| `npm run openapi`                 | Regenerates [docs/openapi.yaml](docs/openapi.yaml) after an API change                 |
 | `npm run seed:demo`               | Demo accounts and a room per language (needs the API running; password in `.env.demo`) |
 
 ## Documenting web concepts
@@ -86,6 +88,7 @@ Wherever you implement a web-development concept, tag it in a comment:
 ## Documentation
 
 - [Execution plan](docs/PLAN.md)
+- [REST API](docs/api.md) (live: [Swagger UI](https://devverse.52-175-72-73.sslip.io/api/docs) once deployed)
 - [Architecture decision records](docs/adr/)
 - [Deployment](docs/deployment.md)
 - [Concepts index](docs/CONCEPTS.md)

@@ -1,0 +1,1556 @@
+# Generated from server/src/openapi by `npm run openapi`. Don't edit by hand: a test fails if it's stale.
+openapi: 3.1.0
+info:
+  title: DevVerse API
+  version: 1.0.0
+  description: |-
+    The REST API behind DevVerse, a real-time collaborative coding platform.
+
+    **Authentication.** Call `POST /auth/login` (or `/auth/register`), then send the `accessToken` as `Authorization: Bearer <token>`. In this page, use **Authorize** and paste the token. Access tokens last 15 minutes; `POST /auth/refresh` swaps the refresh cookie for a new one.
+
+    **Errors** are [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json` objects. `title` says what went wrong; on a 422, `errors` lists the problems by field.
+
+    **Rate limits.** 300 requests a minute per IP address across the API, with tighter limits on sign-in attempts and code runs. A 429 comes with `Retry-After` and `RateLimit` headers.
+
+    **Real time.** Live features don't use REST: chat, presence and run output go over Socket.IO, and the shared editor syncs over a Yjs WebSocket at `/yjs/<roomSlug>/<fileId>`. See `docs/api.md` in the repository.
+servers:
+  - url: /api/v1
+    description: This server
+tags:
+  - name: Meta
+    description: About the API itself.
+  - name: Auth
+    description: Accounts and sessions. A session is a short-lived access token (sent as a Bearer header) plus a refresh token kept in an httpOnly cookie.
+  - name: Users
+    description: Your own profile.
+  - name: Rooms
+    description: "Collaborative coding rooms: create, find, join and delete them, and read their chat history."
+  - name: Files
+    description: A room's project files. Contents are edited live over the Yjs WebSocket, not through these endpoints.
+  - name: Runs
+    description: Running a file in a sandbox. Output streams to the room over Socket.IO; these endpoints start runs and are the polling fallback.
+security:
+  - bearerAuth: []
+paths:
+  /:
+    get:
+      operationId: getApiInfo
+      tags:
+        - Meta
+      summary: Name and version of the API
+      security: []
+      responses:
+        "200":
+          description: The API is up.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  version:
+                    type: string
+                    examples:
+                      - v1
+                required:
+                  - name
+                  - version
+  /auth/register:
+    post:
+      operationId: register
+      tags:
+        - Auth
+      summary: Create an account and sign in
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterInput"
+            example:
+              username: ada
+              email: ada@example.com
+              password: correct horse battery
+      responses:
+        "201":
+          description: Account created. You are signed in.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            Set-Cookie:
+              $ref: "#/components/headers/SetRefreshCookie"
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlNoStore"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /auth/login:
+    post:
+      operationId: login
+      tags:
+        - Auth
+      summary: Sign in with email and password
+      description: Only failed attempts count towards the limit of 10 per 15 minutes per IP address.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+            example:
+              email: ada@example.com
+              password: correct horse battery
+      responses:
+        "200":
+          description: Signed in.
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/SetRefreshCookie"
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlNoStore"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /auth/refresh:
+    post:
+      operationId: refreshSession
+      tags:
+        - Auth
+      summary: Get a new access token
+      description: Uses the refresh cookie, and replaces it with a new one (refresh token rotation). Presenting a refresh token that was already used ends that session everywhere, because it means the token was copied.
+      security:
+        - refreshCookie: []
+      responses:
+        "200":
+          description: A fresh session.
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/SetRefreshCookie"
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlNoStore"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /auth/logout:
+    post:
+      operationId: logout
+      tags:
+        - Auth
+      summary: Sign out
+      description: Ends the session the refresh cookie belongs to. Succeeds even without one.
+      security:
+        - refreshCookie: []
+      responses:
+        "204":
+          description: Signed out.
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/ClearRefreshCookie"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /users/me:
+    get:
+      operationId: getMe
+      tags:
+        - Users
+      summary: Your profile
+      responses:
+        "200":
+          description: Your profile, including private fields.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SelfUser"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      operationId: updateMe
+      tags:
+        - Users
+      summary: Change your profile
+      description: Send only the fields to change. An empty `avatarUrl` removes the avatar.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMeInput"
+            example:
+              bio: Learning Rust, one borrow checker error at a time.
+      responses:
+        "200":
+          description: The updated profile.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SelfUser"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+  /rooms:
+    get:
+      operationId: listRooms
+      tags:
+        - Rooms
+      summary: Rooms you are a member of
+      description: Newest activity first. Every filter is optional; blank means "any".
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 60
+        - name: language
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - javascript
+              - python
+              - cpp
+              - java
+        - name: role
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - viewer
+              - editor
+              - owner
+      responses:
+        "200":
+          description: Matching rooms.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RoomSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+    post:
+      operationId: createRoom
+      tags:
+        - Rooms
+      summary: Create a room
+      description: You become its owner. The room gets a project with one starter file in its language.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRoomInput"
+            example:
+              name: Pair Programming
+              language: python
+              visibility: private
+      responses:
+        "201":
+          description: The new room.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+  /rooms/{slug}:
+    get:
+      operationId: getRoom
+      tags:
+        - Rooms
+      summary: One room
+      description: Members can see any room they belong to; anyone signed in can see a public room.
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: The room's slug, as in its URL (`/rooms/pair-programming-k3x9a`).
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The room.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteRoom
+      tags:
+        - Rooms
+      summary: Delete a room
+      description: Owner only. Deletes its project, files, chat and runs too.
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: The room's slug, as in its URL (`/rooms/pair-programming-k3x9a`).
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /rooms/{slug}/join:
+    post:
+      operationId: joinRoom
+      tags:
+        - Rooms
+      summary: Join a room
+      description: With a valid invite code you join as an editor. Without one you can only join a public room, as a viewer. Joining again is harmless, and an invite code upgrades a viewer to editor.
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: The room's slug, as in its URL (`/rooms/pair-programming-k3x9a`).
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JoinRoomInput"
+            example:
+              inviteCode: q3Vb9xT1mN0aLk8sRw2YpA
+      responses:
+        "200":
+          description: You are a member.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+  /rooms/{slug}/messages:
+    get:
+      operationId: listMessages
+      tags:
+        - Rooms
+      summary: Chat history
+      description: One page of messages, newest first. To go further back, pass the `nextCursor` you got as `before`. New messages arrive over Socket.IO (`chat:new`).
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: The room's slug, as in its URL (`/rooms/pair-programming-k3x9a`).
+          schema:
+            type: string
+        - name: before
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+        - name: limit
+          in: query
+          required: false
+          schema:
+            default: 30
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        "200":
+          description: A page of messages.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlNoStore"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagePage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+  /projects/{projectId}/files:
+    get:
+      operationId: listFiles
+      tags:
+        - Files
+      summary: Files in a project
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          description: The room's project id (`projectId` in the room details).
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Sorted by path.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FileSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createFile
+      tags:
+        - Files
+      summary: Create an empty file
+      description: Editors and owners only. Folders in the path are created implicitly. At most 100 files per project.
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          description: The room's project id (`projectId` in the room details).
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFileInput"
+            example:
+              path: src/utils.py
+      responses:
+        "201":
+          description: The new file.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+  /projects/{projectId}/files/{fileId}:
+    patch:
+      operationId: renameFile
+      tags:
+        - Files
+      summary: Rename or move a file
+      description: Editors and owners only.
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          description: The room's project id (`projectId` in the room details).
+          schema:
+            type: string
+        - name: fileId
+          in: path
+          required: true
+          description: The file id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenameFileInput"
+            example:
+              path: src/helpers.py
+      responses:
+        "200":
+          description: The file at its new path.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+    delete:
+      operationId: deleteFile
+      tags:
+        - Files
+      summary: Delete a file
+      description: Editors and owners only.
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          description: The room's project id (`projectId` in the room details).
+          schema:
+            type: string
+        - name: fileId
+          in: path
+          required: true
+          description: The file id.
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /projects/{projectId}/folders:
+    patch:
+      operationId: moveFolder
+      tags:
+        - Files
+      summary: Rename or move a folder
+      description: Moves every file inside it, all or nothing. Editors and owners only.
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          description: The room's project id (`projectId` in the room details).
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MoveFolderInput"
+            example:
+              from: src
+              to: lib
+      responses:
+        "200":
+          description: The project's files afterwards.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FileSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+    delete:
+      operationId: deleteFolder
+      tags:
+        - Files
+      summary: Delete a folder and everything in it
+      description: Editors and owners only.
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          description: The room's project id (`projectId` in the room details).
+          schema:
+            type: string
+        - name: path
+          in: query
+          required: true
+          description: A path inside the project, such as src/main.py, with "/" between folders. Names use letters, numbers, ".", "-" and "_"; at most 200 characters and 8 folders deep.
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+  /runs:
+    post:
+      operationId: startRun
+      tags:
+        - Runs
+      summary: Run a file
+      description: Runs the file as the room currently sees it in the shared editor, so there is no `code` field. Editors and owners only; one run at a time per person, and a few runs a minute.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRunInput"
+            example:
+              roomSlug: pair-programming-k3x9a
+              fileId: 6730c2f4e1b2a3c4d5e6f701
+              stdin: ""
+      responses:
+        "202":
+          description: Queued. Follow it over Socket.IO (`run:output`, `run:finished`) or poll the `Location`.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Run"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    get:
+      operationId: listRuns
+      tags:
+        - Runs
+      summary: A room's recent runs
+      description: Newest first.
+      parameters:
+        - name: room
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+        - name: limit
+          in: query
+          required: false
+          schema:
+            default: 10
+            type: integer
+            minimum: 1
+            maximum: 20
+      responses:
+        "200":
+          description: Recent runs.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlNoStore"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Run"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+  /runs/{id}:
+    get:
+      operationId: getRun
+      tags:
+        - Runs
+      summary: One run
+      description: "The fallback while the socket is down: ask about once a second until `status` is `finished` or `failed`."
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The run id.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The run so far.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlNoStore"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Run"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /healthz:
+    servers:
+      - url: /
+    get:
+      operationId: getHealth
+      tags:
+        - Meta
+      summary: Health check
+      security: []
+      responses:
+        "200":
+          description: Up, and connected to the database.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - ok
+                      - degraded
+                  db:
+                    type: string
+                    enum:
+                      - connected
+                      - disconnected
+                  uptimeSeconds:
+                    type: integer
+                required:
+                  - status
+                  - db
+                  - uptimeSeconds
+        "503":
+          description: Up, but the database is unreachable.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - ok
+                      - degraded
+                  db:
+                    type: string
+                    enum:
+                      - connected
+                      - disconnected
+                  uptimeSeconds:
+                    type: integer
+                required:
+                  - status
+                  - db
+                  - uptimeSeconds
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: The `accessToken` from login, register or refresh.
+    refreshCookie:
+      type: apiKey
+      in: cookie
+      name: dv_refresh
+      description: Set by login and register. Browsers send it automatically; scripts can't read it (httpOnly).
+  schemas:
+    PublicUser:
+      type: object
+      properties:
+        id:
+          type: string
+          pattern: ^[a-f\d]{24}$
+          examples:
+            - 6730c2f4e1b2a3c4d5e6f701
+        username:
+          type: string
+          examples:
+            - ada
+        avatarUrl:
+          type: string
+        bio:
+          type: string
+      required:
+        - id
+        - username
+      additionalProperties: false
+    SelfUser:
+      type: object
+      properties:
+        id:
+          type: string
+          pattern: ^[a-f\d]{24}$
+          examples:
+            - 6730c2f4e1b2a3c4d5e6f701
+        username:
+          type: string
+          examples:
+            - ada
+        avatarUrl:
+          type: string
+        bio:
+          type: string
+        email:
+          type: string
+          examples:
+            - ada@example.com
+        stats:
+          type: object
+          properties:
+            solved:
+              type: integer
+            xp:
+              type: integer
+          required:
+            - solved
+            - xp
+          additionalProperties: false
+        createdAt:
+          type: string
+          format: date-time
+          examples:
+            - 2026-11-15T09:30:00.000Z
+      required:
+        - id
+        - username
+        - email
+        - stats
+        - createdAt
+      additionalProperties: false
+    AuthResponse:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/SelfUser"
+        accessToken:
+          type: string
+          description: "Send as `Authorization: Bearer <token>`."
+        expiresIn:
+          type: integer
+          description: Seconds until the access token expires.
+          examples:
+            - 900
+      required:
+        - user
+        - accessToken
+        - expiresIn
+      additionalProperties: false
+    FileSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          pattern: ^[a-f\d]{24}$
+          examples:
+            - 6730c2f4e1b2a3c4d5e6f701
+        path:
+          type: string
+          examples:
+            - src/main.py
+      required:
+        - id
+        - path
+      additionalProperties: false
+    RoomSummary:
+      type: object
+      properties:
+        slug:
+          type: string
+          examples:
+            - pair-programming-k3x9a
+        name:
+          type: string
+          examples:
+            - Pair Programming
+        language:
+          type: string
+          enum:
+            - javascript
+            - python
+            - cpp
+            - java
+        visibility:
+          type: string
+          enum:
+            - private
+            - public
+        owner:
+          type: object
+          properties:
+            id:
+              type: string
+              pattern: ^[a-f\d]{24}$
+              examples:
+                - 6730c2f4e1b2a3c4d5e6f701
+            username:
+              type: string
+              examples:
+                - ada
+          required:
+            - id
+            - username
+          additionalProperties: false
+        memberCount:
+          type: integer
+        role:
+          anyOf:
+            - type: string
+              enum:
+                - viewer
+                - editor
+                - owner
+            - type: "null"
+          description: Your role here, or null if you haven't joined (public rooms).
+        updatedAt:
+          type: string
+          format: date-time
+          examples:
+            - 2026-11-15T09:30:00.000Z
+      required:
+        - slug
+        - name
+        - language
+        - visibility
+        - owner
+        - memberCount
+        - role
+        - updatedAt
+      additionalProperties: false
+    RoomDetail:
+      type: object
+      properties:
+        slug:
+          type: string
+          examples:
+            - pair-programming-k3x9a
+        name:
+          type: string
+          examples:
+            - Pair Programming
+        language:
+          type: string
+          enum:
+            - javascript
+            - python
+            - cpp
+            - java
+        visibility:
+          type: string
+          enum:
+            - private
+            - public
+        owner:
+          type: object
+          properties:
+            id:
+              type: string
+              pattern: ^[a-f\d]{24}$
+              examples:
+                - 6730c2f4e1b2a3c4d5e6f701
+            username:
+              type: string
+              examples:
+                - ada
+          required:
+            - id
+            - username
+          additionalProperties: false
+        memberCount:
+          type: integer
+        role:
+          anyOf:
+            - type: string
+              enum:
+                - viewer
+                - editor
+                - owner
+            - type: "null"
+          description: Your role here, or null if you haven't joined (public rooms).
+        updatedAt:
+          type: string
+          format: date-time
+          examples:
+            - 2026-11-15T09:30:00.000Z
+        projectId:
+          type: string
+          pattern: ^[a-f\d]{24}$
+          examples:
+            - 6730c2f4e1b2a3c4d5e6f701
+        members:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                pattern: ^[a-f\d]{24}$
+                examples:
+                  - 6730c2f4e1b2a3c4d5e6f701
+              username:
+                type: string
+                examples:
+                  - ada
+              role:
+                type: string
+                enum:
+                  - viewer
+                  - editor
+                  - owner
+            required:
+              - id
+              - username
+              - role
+            additionalProperties: false
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/FileSummary"
+          description: Sorted by path.
+        inviteCode:
+          description: Only sent to the owner. Anyone who has it can join as an editor.
+          type: string
+      required:
+        - slug
+        - name
+        - language
+        - visibility
+        - owner
+        - memberCount
+        - role
+        - updatedAt
+        - projectId
+        - members
+        - files
+      additionalProperties: false
+    ChatMessage:
+      type: object
+      properties:
+        id:
+          type: string
+          pattern: ^[a-f\d]{24}$
+          examples:
+            - 6730c2f4e1b2a3c4d5e6f701
+        roomSlug:
+          type: string
+        author:
+          type: object
+          properties:
+            id:
+              type: string
+              pattern: ^[a-f\d]{24}$
+              examples:
+                - 6730c2f4e1b2a3c4d5e6f701
+            username:
+              type: string
+              examples:
+                - ada
+          required:
+            - id
+            - username
+          additionalProperties: false
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+          examples:
+            - 2026-11-15T09:30:00.000Z
+      required:
+        - id
+        - roomSlug
+        - author
+        - body
+        - createdAt
+      additionalProperties: false
+    MessagePage:
+      type: object
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatMessage"
+          description: Newest first.
+        nextCursor:
+          description: Pass as `before` for the next, older page; null on the oldest page.
+          type:
+            - string
+            - "null"
+      required:
+        - messages
+        - nextCursor
+      additionalProperties: false
+    Run:
+      type: object
+      properties:
+        id:
+          type: string
+          pattern: ^[a-f\d]{24}$
+          examples:
+            - 6730c2f4e1b2a3c4d5e6f701
+        roomSlug:
+          type: string
+        fileId:
+          type: string
+          pattern: ^[a-f\d]{24}$
+          examples:
+            - 6730c2f4e1b2a3c4d5e6f701
+        language:
+          type: string
+          enum:
+            - javascript
+            - python
+            - cpp
+            - java
+        status:
+          type: string
+          enum:
+            - queued
+            - running
+            - finished
+            - failed
+          description: "`finished`: the program ran, whatever its verdict. `failed`: it could not be run."
+        by:
+          type: object
+          properties:
+            id:
+              type: string
+              pattern: ^[a-f\d]{24}$
+              examples:
+                - 6730c2f4e1b2a3c4d5e6f701
+            username:
+              type: string
+              examples:
+                - ada
+          required:
+            - id
+            - username
+          additionalProperties: false
+        stdout:
+          type: string
+        stderr:
+          type: string
+        verdict:
+          anyOf:
+            - type: string
+              enum:
+                - ok
+                - error
+                - timeout
+                - memory
+                - output-limit
+            - type: "null"
+        exitCode:
+          anyOf:
+            - type: integer
+            - type: "null"
+        durationMs:
+          anyOf:
+            - type: integer
+            - type: "null"
+        truncated:
+          type: boolean
+          description: Some output was dropped for going over the limit.
+        error:
+          description: Why the run failed, when status is 'failed'.
+          type:
+            - string
+            - "null"
+        createdAt:
+          type: string
+          format: date-time
+          examples:
+            - 2026-11-15T09:30:00.000Z
+      required:
+        - id
+        - roomSlug
+        - fileId
+        - language
+        - status
+        - by
+        - stdout
+        - stderr
+        - verdict
+        - exitCode
+        - durationMs
+        - truncated
+        - error
+        - createdAt
+      additionalProperties: false
+    Problem:
+      type: object
+      properties:
+        type:
+          type: string
+          examples:
+            - about:blank
+        title:
+          type: string
+          description: What went wrong, written for people.
+          examples:
+            - Room not found
+        status:
+          type: integer
+          examples:
+            - 404
+        instance:
+          type: string
+          description: The path that was requested.
+          examples:
+            - /api/v1/rooms/nope
+        requestId:
+          type: string
+          description: Also in the X-Request-Id header. Quote it in bug reports.
+        errors:
+          description: Field-by-field problems, on validation errors (422) and some conflicts (409).
+          examples:
+            - name:
+                - Room name must be at least 3 characters
+          type: object
+          propertyNames:
+            type: string
+          additionalProperties:
+            type: array
+            items:
+              type: string
+      required:
+        - type
+        - title
+        - status
+        - instance
+        - requestId
+      additionalProperties: false
+      description: An RFC 9457 problem details object, sent as application/problem+json.
+    RegisterInput:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 24
+          pattern: ^[a-z0-9_-]+$
+        email:
+          type: string
+          format: email
+          pattern: ^(?:[A-Za-z0-9_'+\-]+\.)*[A-Za-z0-9_'+\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+      required:
+        - username
+        - email
+        - password
+    LoginInput:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          pattern: ^(?:[A-Za-z0-9_'+\-]+\.)*[A-Za-z0-9_'+\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$
+        password:
+          type: string
+          minLength: 1
+      required:
+        - email
+        - password
+    UpdateMeInput:
+      type: object
+      properties:
+        bio:
+          type: string
+          maxLength: 280
+        avatarUrl:
+          anyOf:
+            - type: string
+              format: uri
+            - type: string
+              const: ""
+      additionalProperties: false
+    CreateRoomInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 3
+          maxLength: 60
+        visibility:
+          default: private
+          type: string
+          enum:
+            - private
+            - public
+        language:
+          default: javascript
+          type: string
+          enum:
+            - javascript
+            - python
+            - cpp
+            - java
+      required:
+        - name
+    JoinRoomInput:
+      type: object
+      properties:
+        inviteCode:
+          type: string
+          maxLength: 64
+    CreateFileInput:
+      type: object
+      properties:
+        path:
+          description: A path inside the project, such as src/main.py, with "/" between folders. Names use letters, numbers, ".", "-" and "_"; at most 200 characters and 8 folders deep.
+          type: string
+      required:
+        - path
+    RenameFileInput:
+      type: object
+      properties:
+        path:
+          description: A path inside the project, such as src/main.py, with "/" between folders. Names use letters, numbers, ".", "-" and "_"; at most 200 characters and 8 folders deep.
+          type: string
+      required:
+        - path
+    MoveFolderInput:
+      type: object
+      properties:
+        from:
+          description: A path inside the project, such as src/main.py, with "/" between folders. Names use letters, numbers, ".", "-" and "_"; at most 200 characters and 8 folders deep.
+          type: string
+        to:
+          description: A path inside the project, such as src/main.py, with "/" between folders. Names use letters, numbers, ".", "-" and "_"; at most 200 characters and 8 folders deep.
+          type: string
+      required:
+        - from
+        - to
+    CreateRunInput:
+      type: object
+      properties:
+        roomSlug:
+          type: string
+          minLength: 1
+          maxLength: 64
+        fileId:
+          type: string
+          pattern: ^[a-f\d]{24}$
+        stdin:
+          default: ""
+          type: string
+      required:
+        - roomSlug
+        - fileId
+  headers:
+    Location:
+      description: Where the new resource can be found.
+      schema:
+        type: string
+    SetRefreshCookie:
+      description: "Sets the `dv_refresh` refresh token: httpOnly, SameSite=Lax, Path=/api/v1/auth, Secure in production."
+      schema:
+        type: string
+    ClearRefreshCookie:
+      description: Clears the `dv_refresh` cookie.
+      schema:
+        type: string
+    CacheControlNoStore:
+      description: "`no-store`: tokens and live data must not be cached."
+      schema:
+        type: string
+    RetryAfter:
+      description: Seconds to wait before trying again.
+      schema:
+        type: integer
+    RateLimit:
+      description: Requests left in the current window (IETF RateLimit header, draft 8).
+      schema:
+        type: string
+      example: '"default";r=0;t=42'
+    RateLimitPolicy:
+      description: The limit that applies (IETF RateLimit-Policy header, draft 8).
+      schema:
+        type: string
+      example: '"default";q=300;w=60'
+    WWWAuthenticate:
+      description: Which authentication scheme to use, and why the token was rejected.
+      schema:
+        type: string
+      example: Bearer error="invalid_token"
+    XRequestId:
+      description: Identifies this request in the server logs. Sent with every response.
+      schema:
+        type: string
+  responses:
+    Unauthorized:
+      description: Not signed in, or the access token is invalid or expired.
+      headers:
+        WWW-Authenticate:
+          $ref: "#/components/headers/WWWAuthenticate"
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content: &a1
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Forbidden:
+      description: Signed in, but not allowed to do this.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content: *a1
+    NotFound:
+      description: No such resource (or route).
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content: *a1
+    Conflict:
+      description: Clashes with the current state, such as a name that is already taken.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content: *a1
+    ValidationFailed:
+      description: The request was understood but its values are invalid. `errors` lists them by field.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content: *a1
+    TooManyRequests:
+      description: Rate limited. Wait for `Retry-After` seconds.
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
+        RateLimit:
+          $ref: "#/components/headers/RateLimit"
+        RateLimit-Policy:
+          $ref: "#/components/headers/RateLimitPolicy"
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content: *a1
+    ServiceUnavailable:
+      description: Temporarily overloaded. Try again after `Retry-After` seconds.
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content: *a1

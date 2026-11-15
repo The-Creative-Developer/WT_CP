@@ -45,7 +45,11 @@ export const filePathSchema = z
                   : null;
         if (problem) ctx.addIssue({ code: 'custom', message: problem });
       }),
-  );
+  )
+  // The rules above are code, which JSON Schema can't express, so the API docs show this instead.
+  .meta({
+    description: `A path inside the project, such as src/main.py, with "/" between folders. Names use letters, numbers, ".", "-" and "_"; at most ${MAX_PATH_LENGTH} characters and ${MAX_FOLDER_DEPTH} folders deep.`,
+  });
 
 export const createFileSchema = z.object({ path: filePathSchema });
 export const renameFileSchema = z.object({ path: filePathSchema });
