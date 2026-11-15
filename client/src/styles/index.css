@@ -45,6 +45,30 @@ body {
   }
 }
 
+/* Code review: a dot in the diff editor's gutter beside lines with comments (classes set in features/review/DiffViewer).
+   Resolved threads fade, so the open ones stand out. */
+.review-thread-glyph {
+  cursor: pointer;
+}
+.review-thread-glyph::before {
+  content: '';
+  display: block;
+  width: 10px;
+  height: 10px;
+  margin: 4px auto 0;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+.review-thread-glyph.is-resolved::before {
+  background: var(--color-text-muted);
+  box-shadow: none;
+  opacity: 0.6;
+}
+.review-focus-line {
+  background-color: color-mix(in srgb, var(--color-accent) 18%, transparent);
+}
+
 /* Other people's selections and carets in the shared editor (classes added by y-monaco). Each person's colour and name
    label come from per-person rules built in features/editor/remote-cursors.ts; these are the shared layout and the
    fallback colour. */

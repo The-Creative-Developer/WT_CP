@@ -101,3 +101,30 @@ export async function api<T>(path: string, init: RequestInit = {}, retried = fal
   }
   return body as T;
 }
+
+/**
+ * Fetches a file the API sends as an attachment, such as a project ZIP, with the same token handling as api().
+ * A plain <a href> can't be used: it wouldn't send the Bearer token.
+ */
+export async function apiFile(
+  path: string,
+  retried = false,
+): Promise<{ blob: Blob; filename: string | null }> {
+  const headers = new Headers();
+  if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+  const res = await fetch(`${API_BASE}${path}`, { headers, credentials: 'include' });
+  if (res.status === 401 && !retried) {
+    const session = await refreshSession();
+    if (session) return apiFile(path, true);
+  }
+  if (!res.ok) {
+    const body = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
+    const title =
+      body && typeof body === 'object' && 'title' in body ? String(body.title) : res.statusText;
+    throw new ApiError(res.status, title, body);
+  }
+  // [CONCEPT: Content-Disposition] The server names the file: `attachment; filename=room-slug.zip`.
+  const disposition = res.headers.get('content-disposition') ?? '';
+  const filename = /filename="?([^";]+)"?/.exec(disposition)?.[1] ?? null;
+  return { blob: await res.blob(), filename };
+}
