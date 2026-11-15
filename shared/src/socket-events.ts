@@ -58,6 +58,20 @@ export interface CallPeer {
   media: MediaState;
 }
 
+/** One entry of RTCConfiguration.iceServers, as GET /api/v1/turn-credentials returns it. */
+export interface IceServer {
+  urls: string[];
+  username?: string;
+  credential?: string;
+}
+
+/** What a call needs to find a network path: STUN servers, and TURN relays with time-limited credentials. */
+export interface IceConfig {
+  iceServers: IceServer[];
+  /** Seconds until the TURN credentials expire. Fetch new ones before joining a call after that. */
+  ttl: number;
+}
+
 /** The connect_error message for a missing or expired access token: refresh it and reconnect. */
 export const SOCKET_UNAUTHORIZED = 'unauthorized';
 

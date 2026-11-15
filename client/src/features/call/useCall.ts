@@ -11,6 +11,7 @@ import {
   type DeviceChoice,
   type Devices,
 } from './media';
+import { loadIceServers } from './ice';
 import { isPolite, PeerLink, type Signal } from './peer-link';
 
 /** idle: not in the call. preview: choosing devices before joining. joining: waiting for the server. */
@@ -50,6 +51,7 @@ export function useCall(slug: string, channel: RoomChannel) {
   const inCall = useRef(false);
   const myId = useRef<string | null>(null);
   const openRequest = useRef(0);
+  const iceServers = useRef<RTCIceServer[]>(stunServers());
 
   useEffect(() => {
     mediaRef.current = media;
@@ -74,7 +76,7 @@ export function useCall(slug: string, channel: RoomChannel) {
       peerId,
       polite: isPolite(myId.current ?? '', peerId),
       stream: localRef.current,
-      iceServers: stunServers(),
+      iceServers: iceServers.current,
       send: (signal: Signal) => {
         if ('description' in signal) {
           const { type, sdp } = signal.description;
@@ -142,6 +144,8 @@ export function useCall(slug: string, channel: RoomChannel) {
   }, [socket, slug]);
 
   async function sendJoin(): Promise<void> {
+    // Fetched before joining, so every link starts with the TURN relay in its configuration.
+    iceServers.current = await loadIceServers();
     const res = await socket
       .timeout(5_000)
       .emitWithAck('call:join', { slug, media: mediaRef.current })

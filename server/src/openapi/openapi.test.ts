@@ -217,6 +217,13 @@ describe('responses match the documented schemas', () => {
     expectMatches(schemas.reviewDetail, closed.body);
   });
 
+  it('turn credentials', async () => {
+    const { header } = await signUp('turner');
+    const res = await request(app).get('/api/v1/turn-credentials').set('Authorization', header);
+    expect(res.status).toBe(200);
+    expectMatches(schemas.iceConfig, res.body);
+  });
+
   it('errors are problem details', async () => {
     const { header } = await signUp('carol');
     const missing = await request(app).get('/api/v1/rooms/nope').set('Authorization', header);

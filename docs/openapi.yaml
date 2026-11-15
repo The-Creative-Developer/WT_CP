@@ -29,6 +29,8 @@ tags:
     description: A room's project files. Contents are edited live over the Yjs WebSocket, not through these endpoints.
   - name: Versions
     description: "Snapshots: saved copies of a whole project, like commits, plus downloading the project as a ZIP."
+  - name: Calls
+    description: Voice and video calls. Media goes directly between browsers over WebRTC, signalled over Socket.IO; the REST API only hands out the servers that help browsers connect.
   - name: Reviews
     description: "Code review: a version compared with an earlier one, with comment threads on its lines. Editors ask for reviews; any member of the room can comment."
   - name: Runs
@@ -1084,6 +1086,27 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/ValidationFailed"
+  /turn-credentials:
+    get:
+      operationId: getTurnCredentials
+      tags:
+        - Calls
+      summary: ICE servers for a call
+      description: STUN servers, and TURN relays with credentials that expire after `ttl` seconds (coturn's `use-auth-secret`). Fetch just before joining a call. Without TURN configured on the server, only STUN is returned.
+      responses:
+        "200":
+          description: Servers for `RTCConfiguration.iceServers`.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlNoStore"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IceConfig"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /runs:
     post:
       operationId: startRun
@@ -2021,6 +2044,41 @@ components:
         - createdAt
         - updatedAt
         - comments
+      additionalProperties: false
+    IceConfig:
+      type: object
+      properties:
+        iceServers:
+          type: array
+          items:
+            type: object
+            properties:
+              urls:
+                type: array
+                items:
+                  type: string
+                examples:
+                  - - turn:devverse.203-0-113-7.sslip.io:3478?transport=udp
+              username:
+                description: 'TURN only: "<expiry, Unix seconds>:<user id>".'
+                examples:
+                  - 1794765600:6730c2f4e1b2a3c4d5e6f701
+                type: string
+              credential:
+                description: "TURN only: base64 HMAC-SHA1 of the username, checked by coturn."
+                type: string
+            required:
+              - urls
+            additionalProperties: false
+          description: Pass as `RTCConfiguration.iceServers`. STUN first, then TURN if configured.
+        ttl:
+          type: integer
+          description: Seconds until the TURN credentials expire.
+          examples:
+            - 14400
+      required:
+        - iceServers
+        - ttl
       additionalProperties: false
     Problem:
       type: object

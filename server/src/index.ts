@@ -3,6 +3,7 @@ import { createApp } from './app';
 import { connectDatabase, disconnectDatabase } from './config/db';
 import { loadEnv } from './config/env';
 import { createAuthService } from './services/auth';
+import { createIceService } from './services/ice';
 import { createRunService, markInterruptedRuns } from './services/runs';
 import { attachSocketServer } from './sockets';
 import { logger } from './utils/logger';
@@ -21,7 +22,15 @@ const runs = createRunService({
 });
 // Express must be listening before Socket.IO attaches: Socket.IO takes over the existing 'request' listeners and
 // passes on everything outside /socket.io/. Added afterwards, Express would also answer Socket.IO's own requests.
-server.on('request', createApp(env, auth, runs, collab.liveText));
+const ice = createIceService({
+  stunUrls: env.STUN_URLS,
+  turnUrls: env.TURN_URLS,
+  turnSecret: env.TURN_SECRET,
+  ttlSeconds: env.TURN_TTL_SECONDS,
+});
+if (!ice.hasTurn)
+  logger.warn('TURN is not configured: calls on strict networks may fail to connect');
+server.on('request', createApp(env, auth, runs, collab.liveText, ice));
 const sockets = attachSocketServer(server, { auth, allowedOrigins: env.CORS_ORIGINS, runs });
 
 async function start() {

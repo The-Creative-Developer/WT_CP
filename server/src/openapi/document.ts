@@ -127,6 +127,8 @@ const tags = {
     "A room's project files. Contents are edited live over the Yjs WebSocket, not through these endpoints.",
   Versions:
     'Snapshots: saved copies of a whole project, like commits, plus downloading the project as a ZIP.',
+  Calls:
+    'Voice and video calls. Media goes directly between browsers over WebRTC, signalled over Socket.IO; the REST API only hands out the servers that help browsers connect.',
   Reviews:
     'Code review: a version compared with an earlier one, with comment threads on its lines. Editors ask for reviews; any member of the room can comment.',
   Runs: 'Running a file in a sandbox. Output streams to the room over Socket.IO; these endpoints start runs and are the polling fallback.',
@@ -642,6 +644,23 @@ const operations: Record<
       example: { resolved: true },
       responses: { 200: { description: 'The comment.', schema: ref('ReviewComment') } },
       errors: [401, 403, 404, 409, 422],
+    },
+  },
+  '/turn-credentials': {
+    get: {
+      operationId: 'getTurnCredentials',
+      tag: 'Calls',
+      summary: 'ICE servers for a call',
+      description:
+        "STUN servers, and TURN relays with credentials that expire after `ttl` seconds (coturn's `use-auth-secret`). Fetch just before joining a call. Without TURN configured on the server, only STUN is returned.",
+      responses: {
+        200: {
+          description: 'Servers for `RTCConfiguration.iceServers`.',
+          schema: ref('IceConfig'),
+          headers: ['CacheControlNoStore'],
+        },
+      },
+      errors: [401],
     },
   },
   '/runs': {

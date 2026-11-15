@@ -6,6 +6,7 @@ import {
   type AuthResponse,
   type ChatMessage,
   type FileSummary,
+  type IceConfig,
   type Language,
   type MessagePage,
   type PublicUser,
@@ -182,6 +183,33 @@ export const reviewDetail = reviewSummary.extend({
   comments: z.array(reviewComment).meta({ description: 'Oldest first.' }),
 });
 
+export const iceConfig = z.strictObject({
+  iceServers: z
+    .array(
+      z.strictObject({
+        urls: z.array(z.string()).meta({
+          examples: [['turn:devverse.203-0-113-7.sslip.io:3478?transport=udp']],
+        }),
+        username: z
+          .string()
+          .optional()
+          .meta({
+            description: 'TURN only: "<expiry, Unix seconds>:<user id>".',
+            examples: ['1794765600:6730c2f4e1b2a3c4d5e6f701'],
+          }),
+        credential: z.string().optional().meta({
+          description: 'TURN only: base64 HMAC-SHA1 of the username, checked by coturn.',
+        }),
+      }),
+    )
+    .meta({
+      description: 'Pass as `RTCConfiguration.iceServers`. STUN first, then TURN if configured.',
+    }),
+  ttl: z
+    .int()
+    .meta({ description: 'Seconds until the TURN credentials expire.', examples: [14400] }),
+});
+
 // [CONCEPT: Problem Details (RFC 9457)] Every error has this shape, whichever endpoint sent it.
 export const problem = z
   .strictObject({
@@ -223,6 +251,7 @@ export const responseSchemas = {
   ReviewComment: reviewComment,
   ReviewSummary: reviewSummary,
   ReviewDetail: reviewDetail,
+  IceConfig: iceConfig,
   Problem: problem,
 };
 
@@ -245,4 +274,5 @@ export type ResponseSchemaChecks = [
   Assert<Same<z.infer<typeof reviewComment>, ReviewComment>>,
   Assert<Same<z.infer<typeof reviewSummary>, ReviewSummary>>,
   Assert<Same<z.infer<typeof reviewDetail>, ReviewDetail>>,
+  Assert<Same<z.infer<typeof iceConfig>, IceConfig>>,
 ];
