@@ -13,6 +13,7 @@ import {
   type RunBroadcast,
   type RunServiceOptions,
 } from '../services/runs';
+import { run as runSchema } from '../openapi/schemas';
 import { deferred, RUNNER_TOKEN, startFakeRunner } from '../test/fake-runner';
 import { testEnv, useTestDatabase } from '../test/helpers';
 
@@ -95,6 +96,7 @@ describe('POST /runs', () => {
     expect(res.headers.location).toBe(`/api/v1/runs/${run.id}`);
     expect(run).toMatchObject({ roomSlug: slug, fileId, language: 'python', verdict: null });
     expect(['queued', 'running']).toContain(run.status);
+    expect(runSchema.safeParse(run).error).toBeUndefined();
 
     await finishedEvent(run.id);
     const events = broadcasts.filter((b) => b.roomSlug === slug).map((b) => b.event);
@@ -264,6 +266,7 @@ describe('running', () => {
       stderr: 'Traceback…\n',
       error: null,
     });
+    expect(runSchema.safeParse(run.body).error).toBeUndefined();
   });
 
   it('marks the run failed when the runner itself fails', async () => {

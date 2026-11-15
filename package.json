@@ -23,6 +23,7 @@
     "format:check": "prettier --check .",
     "test": "npm run test --workspaces --if-present",
     "concepts": "node scripts/generate-concepts.mjs",
+    "openapi": "npm run openapi -w server",
     "seed:demo": "node scripts/seed-demo.mjs",
     "db:up": "docker compose up -d mongo",
     "db:down": "docker compose down",
