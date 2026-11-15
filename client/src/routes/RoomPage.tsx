@@ -3,6 +3,8 @@ import { lazy, Suspense, useEffect, useId, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useAuth } from '../features/auth/AuthContext';
+import { CallPanel } from '../features/call/CallPanel';
+import { useCall } from '../features/call/useCall';
 import { ChatPanel } from '../features/chat/ChatPanel';
 import { useChat } from '../features/chat/useChat';
 import { EditorTabs, tabId } from '../features/files/EditorTabs';
@@ -125,6 +127,7 @@ function RoomView({ room }: { room: RoomDetail }) {
   const channel = useRoomChannel(room.slug);
   const runner = useRoomRun(room.slug, username, channel);
   const chat = useChat(room.slug, channel, myId);
+  const call = useCall(room.slug, channel);
   // Opened on a first visit: a top-level file that runs here (main.py), not whatever sorts first (README.md).
   const runnable = room.files.filter((f) => languageForPath(f.path) === room.language);
   const starter = runnable.find((f) => !f.path.includes('/')) ?? runnable[0];
@@ -219,6 +222,8 @@ function RoomView({ room }: { room: RoomDetail }) {
           )}
         </p>
       </header>
+
+      <CallPanel call={call} username={username} />
 
       {/* [CONCEPT: CSS Grid Layout] Editor beside a sidebar on wide screens; stacked on phones. */}
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">

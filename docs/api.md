@@ -117,4 +117,4 @@ Three channels sit alongside REST:
 
 - **Socket.IO** (`/socket.io`), authenticated with the access token. Room presence (`presence:update`), chat (`chat:send`, `chat:new`, `chat:typing`), file tree changes (`files:changed`) and run output (`run:started`, `run:output`, `run:finished`). Every event and payload is typed in `shared/src/socket-events.ts`.
 - **Yjs WebSocket** (`/yjs/<roomSlug>/<fileId>?token=<access token>`) syncs the shared editor and cursors with the Yjs protocol. The token and room role are checked during the HTTP upgrade. A custom message (type 100) tells clients when their edits are saved.
-- **WebRTC** (Week 3) for calls, signalled over Socket.IO.
+- **WebRTC** for voice and video calls (up to 4 people), signalled over Socket.IO (`call:join`, `call:leave`, `call:media`, `call:roster`, `rtc:description`, `rtc:ice`). Media goes directly between browsers. See [`webrtc.md`](webrtc.md).
