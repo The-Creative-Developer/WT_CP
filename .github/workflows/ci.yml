@@ -50,6 +50,9 @@ jobs:
       JWT_ACCESS_SECRET: ci-placeholder
       JWT_REFRESH_SECRET: ci-placeholder
       RUNNER_TOKEN: ci-placeholder
+      TURN_HOST: ci.invalid
+      TURN_EXTERNAL_IP: 192.0.2.1
+      TURN_SECRET: ci-placeholder
     steps:
       - uses: actions/checkout@v4
       - name: Build production images

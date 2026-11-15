@@ -187,5 +187,7 @@ images with `sh runner/sandboxes/build.sh`.
 The same stack runs on a laptop with Docker, to check changes to the Dockerfiles or the Caddyfile. Use a settings
 file with `PUBLIC_URL=http://localhost` (plain HTTP, so no certificate is needed), the local MongoDB
 (`MONGODB_URI=mongodb://host.docker.internal:27017/devverse-rehearsal?replicaSet=rs0&directConnection=true`, after
-`npm run db:up`), and on macOS a `RUNS_DIR` that Docker Desktop shares, such as `/private/tmp/devverse-runs`. Then
+`npm run db:up`), on macOS a `RUNS_DIR` that Docker Desktop shares, such as `/private/tmp/devverse-runs`, and the TURN
+settings (`TURN_HOST=localhost`, `TURN_EXTERNAL_IP=127.0.0.1`, and a `TURN_SECRET` of at least 32 characters, or the API
+won't start). Then
 `docker compose -f docker-compose.prod.yml --env-file <that file> up -d --build` and open http://localhost.
