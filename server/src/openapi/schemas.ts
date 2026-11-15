@@ -1,6 +1,7 @@
 import {
   LANGUAGE_IDS,
   ROOM_ROLES,
+  REVIEW_STATUSES,
   ROOM_VISIBILITIES,
   type AuthResponse,
   type ChatMessage,
@@ -8,10 +9,15 @@ import {
   type Language,
   type MessagePage,
   type PublicUser,
+  type ReviewComment,
+  type ReviewDetail,
+  type ReviewSummary,
   type RoomDetail,
   type RoomSummary,
   type RunDto,
   type SelfUser,
+  type SnapshotDetail,
+  type SnapshotSummary,
 } from '@devverse/shared';
 import { z } from 'zod';
 
@@ -118,6 +124,64 @@ export const run = z.strictObject({
   createdAt: dateTime,
 });
 
+export const snapshotSummary = z.strictObject({
+  id: objectId,
+  projectId: objectId,
+  message: z.string().meta({ examples: ['Loop works now'] }),
+  author: userRef,
+  fileCount: z.int(),
+  createdAt: dateTime,
+});
+
+export const snapshotDetail = snapshotSummary.extend({
+  files: z
+    .array(
+      z.strictObject({
+        path: z.string().meta({ examples: ['main.py'] }),
+        content: z.string().meta({ examples: ['print("Hello")\n'] }),
+      }),
+    )
+    .meta({ description: 'Sorted by path.' }),
+});
+
+export const reviewComment = z.strictObject({
+  id: objectId,
+  author: userRef,
+  path: z.string().meta({ description: 'A file in the reviewed version.', examples: ['main.py'] }),
+  line: z.int().meta({
+    description: "1-based line in the reviewed version's copy of the file.",
+    examples: [3],
+  }),
+  body: z.string().meta({ examples: ['Could this loop be a comprehension?'] }),
+  parentId: objectId
+    .nullable()
+    .meta({ description: "The thread's first comment; null if this one starts the thread." }),
+  resolved: z
+    .boolean()
+    .meta({ description: 'Set on the first comment of a thread, for the whole thread.' }),
+  createdAt: dateTime,
+  editedAt: dateTime.nullable(),
+});
+
+export const reviewSummary = z.strictObject({
+  id: objectId,
+  projectId: objectId,
+  snapshot: snapshotSummary.meta({ description: 'The version under review.' }),
+  base: snapshotSummary
+    .nullable()
+    .meta({ description: 'What it is compared with; null means an empty project.' }),
+  requester: userRef,
+  status: z.enum(REVIEW_STATUSES),
+  openThreads: z.int().meta({ description: "Threads that aren't resolved yet." }),
+  commentCount: z.int(),
+  createdAt: dateTime,
+  updatedAt: dateTime,
+});
+
+export const reviewDetail = reviewSummary.extend({
+  comments: z.array(reviewComment).meta({ description: 'Oldest first.' }),
+});
+
 // [CONCEPT: Problem Details (RFC 9457)] Every error has this shape, whichever endpoint sent it.
 export const problem = z
   .strictObject({
@@ -154,6 +218,11 @@ export const responseSchemas = {
   ChatMessage: chatMessage,
   MessagePage: messagePage,
   Run: run,
+  SnapshotSummary: snapshotSummary,
+  SnapshotDetail: snapshotDetail,
+  ReviewComment: reviewComment,
+  ReviewSummary: reviewSummary,
+  ReviewDetail: reviewDetail,
   Problem: problem,
 };
 
@@ -171,4 +240,9 @@ export type ResponseSchemaChecks = [
   Assert<Same<z.infer<typeof chatMessage>, ChatMessage>>,
   Assert<Same<z.infer<typeof messagePage>, MessagePage>>,
   Assert<Same<z.infer<typeof run>, RunDto>>,
+  Assert<Same<z.infer<typeof snapshotSummary>, SnapshotSummary>>,
+  Assert<Same<z.infer<typeof snapshotDetail>, SnapshotDetail>>,
+  Assert<Same<z.infer<typeof reviewComment>, ReviewComment>>,
+  Assert<Same<z.infer<typeof reviewSummary>, ReviewSummary>>,
+  Assert<Same<z.infer<typeof reviewDetail>, ReviewDetail>>,
 ];
