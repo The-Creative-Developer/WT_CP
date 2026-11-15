@@ -41,6 +41,23 @@ export interface FilesChangedPayload {
   by: string;
 }
 
+/** A call is a mesh: everyone sends their media to everyone else, so the upload cost grows with each person. */
+export const MAX_CALL_PEERS = 4;
+
+/** Whether someone's microphone and camera are on. Off means the track is disabled, not removed. */
+export interface MediaState {
+  audio: boolean;
+  video: boolean;
+}
+
+/** One connection in a room's call. A person with two tabs in the call is two peers. */
+export interface CallPeer {
+  /** The peer's socket id: where signalling messages for it are addressed. */
+  peerId: string;
+  user: { id: string; username: string };
+  media: MediaState;
+}
+
 /** The connect_error message for a missing or expired access token: refresh it and reconnect. */
 export const SOCKET_UNAUTHORIZED = 'unauthorized';
 
@@ -54,8 +71,10 @@ export interface ServerToClientEvents {
   'run:started': (payload: { runId: string; by: string; language: Language }) => void;
   'run:output': (payload: { runId: string; stream: RunStream; chunk: string }) => void;
   'run:finished': (payload: RunFinishedPayload) => void;
-  'rtc:offer': (payload: { from: string; sdp: RTCSessionDescriptionInit }) => void;
-  'rtc:answer': (payload: { from: string; sdp: RTCSessionDescriptionInit }) => void;
+  /** Who is in the room's call, sent to everyone in the room whenever it changes (and after joining the room). */
+  'call:roster': (payload: { slug: string; peers: CallPeer[] }) => void;
+  /** An offer or answer from another peer in the call. */
+  'rtc:description': (payload: { from: string; description: RTCSessionDescriptionInit }) => void;
   'rtc:ice': (payload: { from: string; candidate: RTCIceCandidateInit }) => void;
 }
 
@@ -67,8 +86,15 @@ export interface ClientToServerEvents {
   'chat:send': (payload: { slug: string; body: string }, ack: Ack<ChatMessage>) => void;
   'chat:typing': (payload: { slug: string }) => void;
   'presence:status': (payload: { slug: string; status: PresenceStatus }) => void;
-  'rtc:offer': (payload: { to: string; sdp: RTCSessionDescriptionInit }) => void;
-  'rtc:answer': (payload: { to: string; sdp: RTCSessionDescriptionInit }) => void;
+  /** Joins the room's call. The ack names this connection (peerId) and lists the peers already there. */
+  'call:join': (
+    payload: { slug: string; media: MediaState },
+    ack: Ack<{ peerId: string; peers: CallPeer[] }>,
+  ) => void;
+  'call:leave': (payload: { slug: string }) => void;
+  'call:media': (payload: { slug: string; media: MediaState }) => void;
+  /** Relayed to one peer in the same call. */
+  'rtc:description': (payload: { to: string; description: RTCSessionDescriptionInit }) => void;
   'rtc:ice': (payload: { to: string; candidate: RTCIceCandidateInit }) => void;
 }
 

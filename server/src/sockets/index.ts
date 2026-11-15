@@ -3,8 +3,11 @@ import {
   chatSendSchema,
   chatTypingSchema,
   colorFor,
+  MAX_CALL_PEERS,
   SOCKET_UNAUTHORIZED,
+  type CallPeer,
   type ClientToServerEvents,
+  type MediaState,
   type PresenceStatus,
   type RoomMember,
   type RoomRole,
@@ -26,6 +29,8 @@ interface SocketData {
   roles: Map<string, RoomRole>;
   /** Whether this tab is in use (see presence:status). */
   status: PresenceStatus;
+  /** The call this socket is in (at most one), and whether its microphone and camera are on. */
+  call: { slug: string; media: MediaState } | null;
 }
 
 export type SocketServer = Server<
@@ -55,6 +60,37 @@ const statusPayload = z.object({
 
 /** The Socket.IO room that carries one DevVerse room's events. */
 export const roomChannel = (slug: string) => `room:${slug}`;
+/** The Socket.IO room of the people in a DevVerse room's call. */
+export const callChannel = (slug: string) => `call:${slug}`;
+
+const mediaSchema = z.object({ audio: z.boolean(), video: z.boolean() });
+const callJoinPayload = z.object({ slug: z.string().trim().min(1).max(64), media: mediaSchema });
+const callMediaPayload = callJoinPayload;
+// Socket ids are 20 URL-safe characters; the bound just keeps garbage out.
+const peerId = z.string().min(1).max(64);
+// [CONCEPT: SDP] A session description lists the media, codecs, encryption keys and network details of one side of
+// the connection. A few kilobytes of text; 32 KB is generous.
+const descriptionPayload = z.object({
+  to: peerId,
+  description: z.object({
+    type: z.enum(['offer', 'answer']),
+    sdp: z.string().max(32 * 1024),
+  }),
+});
+// [CONCEPT: ICE Candidates] One possible network path to a peer (a local address, a public one found through STUN, or
+// a TURN relay). Both sides trade candidates and keep the best pair that works.
+const icePayload = z.object({
+  to: peerId,
+  candidate: z.object({
+    candidate: z.string().max(2048),
+    sdpMid: z.string().max(64).nullable().optional(),
+    sdpMLineIndex: z.int().min(0).max(64).nullable().optional(),
+    usernameFragment: z.string().max(256).nullable().optional(),
+  }),
+});
+// Signalling flood control, per socket. A call setup sends a few descriptions and tens of candidates per peer.
+const SIGNAL_BURST = 200;
+const SIGNAL_WINDOW_MS = 10_000;
 
 /**
  * App events (runs now; presence, chat and call signalling later), on the API's HTTP server and port.
@@ -84,6 +120,7 @@ export function attachSocketServer(
       socket.data.user = await auth.verifyAccessToken(token);
       socket.data.roles = new Map();
       socket.data.status = 'online';
+      socket.data.call = null;
       next();
     } catch {
       // The client refreshes its token and reconnects when it sees this message.
@@ -114,6 +151,20 @@ export function attachSocketServer(
     return [...members.values()];
   }
 
+  async function callPeers(slug: string): Promise<CallPeer[]> {
+    const sockets = await io.in(callChannel(slug)).fetchSockets();
+    return sockets.flatMap(({ id, data: { user, call } }) =>
+      call?.slug === slug
+        ? [{ peerId: id, user: { id: user.id, username: user.username }, media: call.media }]
+        : [],
+    );
+  }
+
+  /** Everyone in the room (not just the call) sees who is in the call, so they know whether to join. */
+  async function broadcastRoster(slug: string) {
+    io.to(roomChannel(slug)).emit('call:roster', { slug, peers: await callPeers(slug) });
+  }
+
   // [CONCEPT: Presence] Everyone in the room gets the full list of who is connected whenever it changes. Sending the
   // whole list (at most 10 people) rather than "X joined" deltas means a client can never drift out of sync.
   async function broadcastPresence(slug: string) {
@@ -122,6 +173,14 @@ export function attachSocketServer(
 
   io.on('connection', (socket) => {
     const { user } = socket.data;
+
+    async function leaveCall() {
+      const call = socket.data.call;
+      if (!call) return;
+      socket.data.call = null;
+      await socket.leave(callChannel(call.slug));
+      await broadcastRoster(call.slug);
+    }
 
     socket.on('room:join', async (payload, ack) => {
       // Payloads come from the client and can't be trusted to match the TypeScript types.
@@ -138,6 +197,7 @@ export function attachSocketServer(
         await socket.join(roomChannel(slug));
         ack({ ok: true, data: { members: await connectedMembers(slug) } });
         await broadcastPresence(slug);
+        socket.emit('call:roster', { slug, peers: await callPeers(slug) });
       } catch (err) {
         if (!(err instanceof HttpError)) logger.error({ err, slug }, 'room:join failed');
         ack({
@@ -152,8 +212,87 @@ export function attachSocketServer(
       if (!parsed.success) return;
       const { slug } = parsed.data;
       if (!socket.data.roles.delete(slug)) return;
+      if (socket.data.call?.slug === slug) await leaveCall();
       await socket.leave(roomChannel(slug));
       await broadcastPresence(slug);
+    });
+
+    const others = async (slug: string) =>
+      (await callPeers(slug)).filter((p) => p.peerId !== socket.id);
+
+    // [CONCEPT: Signalling] WebRTC connects browsers directly, but they first need some way to exchange offers,
+    // answers and ICE candidates. Socket.IO is that channel here: the server relays messages and never sees media.
+    socket.on('call:join', async (payload, ack) => {
+      if (typeof ack !== 'function') return;
+      const parsed = callJoinPayload.safeParse(payload);
+      if (!parsed.success) return ack({ ok: false, error: 'Invalid call' });
+      const { slug, media } = parsed.data;
+      // Anyone in the room, viewers included, may talk: like chat, it doesn't change the code.
+      if (!socket.data.roles.has(slug)) return ack({ ok: false, error: 'Join the room first' });
+      if (socket.data.call?.slug === slug) {
+        return ack({ ok: true, data: { peerId: socket.id, peers: await others(slug) } });
+      }
+      await leaveCall();
+
+      // The count and the join happen with no await in between: Node runs this synchronously, so two people taking
+      // the last place at the same moment can't both get in.
+      const size = io.sockets.adapter.rooms.get(callChannel(slug))?.size ?? 0;
+      if (size >= MAX_CALL_PEERS) {
+        return ack({ ok: false, error: `The call is full (${MAX_CALL_PEERS} people at most)` });
+      }
+      socket.data.call = { slug, media };
+      void socket.join(callChannel(slug));
+
+      ack({ ok: true, data: { peerId: socket.id, peers: await others(slug) } });
+      await broadcastRoster(slug);
+    });
+
+    socket.on('call:leave', async (payload) => {
+      const parsed = slugPayload.safeParse(payload);
+      if (parsed.success && socket.data.call?.slug === parsed.data.slug) await leaveCall();
+    });
+
+    socket.on('call:media', async (payload) => {
+      const parsed = callMediaPayload.safeParse(payload);
+      const call = socket.data.call;
+      if (!parsed.success || call?.slug !== parsed.data.slug) return;
+      const { media } = parsed.data;
+      if (media.audio === call.media.audio && media.video === call.media.video) return;
+      call.media = media;
+      await broadcastRoster(call.slug);
+    });
+
+    const signalAt: number[] = [];
+    /** The peer a signalling message may go to: another socket in the same call. Null drops the message. */
+    function relayTarget(to: string) {
+      const now = Date.now();
+      while (signalAt.length && now - signalAt[0]! > SIGNAL_WINDOW_MS) signalAt.shift();
+      if (signalAt.length >= SIGNAL_BURST) return null;
+      signalAt.push(now);
+      const call = socket.data.call;
+      const target = io.sockets.sockets.get(to);
+      if (!call || !target || target.id === socket.id) return null;
+      // [CONCEPT: Server-Side Authorization] Only between two peers of the same call: a socket id alone isn't enough
+      // to start sending someone offers.
+      return target.data.call?.slug === call.slug ? target : null;
+    }
+
+    socket.on('rtc:description', (payload) => {
+      const parsed = descriptionPayload.safeParse(payload);
+      if (!parsed.success) return;
+      relayTarget(parsed.data.to)?.emit('rtc:description', {
+        from: socket.id,
+        description: parsed.data.description,
+      });
+    });
+
+    socket.on('rtc:ice', (payload) => {
+      const parsed = icePayload.safeParse(payload);
+      if (!parsed.success) return;
+      relayTarget(parsed.data.to)?.emit('rtc:ice', {
+        from: socket.id,
+        candidate: parsed.data.candidate,
+      });
     });
 
     // The tab was hidden for a while (idle) or came back (online). Sent by the client on visibility changes.
@@ -212,6 +351,16 @@ export function attachSocketServer(
 
     // Socket.IO removes a disconnected socket from its rooms by itself; tell those rooms who is left.
     socket.on('disconnect', () => {
+      const call = socket.data.call;
+      if (call) {
+        socket.data.call = null;
+        broadcastRoster(call.slug).catch((err: unknown) =>
+          logger.warn(
+            { err, slug: call.slug },
+            'Could not send the call roster after a disconnect',
+          ),
+        );
+      }
       for (const slug of socket.data.roles.keys()) {
         broadcastPresence(slug).catch((err: unknown) =>
           logger.warn({ err, slug }, 'Could not send presence after a disconnect'),

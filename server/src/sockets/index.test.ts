@@ -423,3 +423,190 @@ describe('chat', () => {
     expect(seen).toEqual([]);
   });
 });
+
+describe('calls', () => {
+  const on = { audio: true, video: true };
+  const sdp = (type: 'offer' | 'answer') => ({ type, sdp: `v=0\r\n${type}` });
+
+  /** Alice's public room, with `extra` other people who joined it as viewers, each connected and in the room. */
+  async function setUp(extra: string[] = ['bob']) {
+    const alice = await signUp('alice');
+    const { slug } = await createRoom(alice, 'public');
+    const tokens = [alice];
+    for (const name of extra) {
+      const token = await signUp(name);
+      await request(server)
+        .post(`/api/v1/rooms/${slug}/join`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+      tokens.push(token);
+    }
+    const all = tokens.map((t) => connect(t));
+    await Promise.all(all.map(connected));
+    for (const c of all) await c.emitWithAck('room:join', { slug });
+    return { slug, all };
+  }
+
+  type Roster = Parameters<ServerToClientEvents['call:roster']>[0];
+  /**
+   * The first call:roster a client receives that matches. Rosters from earlier changes can still be on their way
+   * (the server answers the ack before telling the room), so waiting for "the next one" would be flaky.
+   */
+  const rosterWhere = (client: ClientSocket, match: (r: Roster) => boolean) =>
+    new Promise<Roster>((resolve) => {
+      const listener = (r: Roster) => {
+        if (!match(r)) return;
+        client.off('call:roster', listener);
+        resolve(r);
+      };
+      client.on('call:roster', listener);
+    });
+  const names = (r: Roster) =>
+    r.peers
+      .map((p) => p.user.username)
+      .sort()
+      .join(',');
+  const nextRoster = (client: ClientSocket) => rosterWhere(client, () => true);
+
+  it('tells a new room member who is in the call', async () => {
+    const { slug, all } = await setUp([]);
+    const [alice] = all;
+    await alice!.emitWithAck('call:join', { slug, media: on });
+
+    const late = connect(await signUp('dora'));
+    await connected(late);
+    // dora isn't a member, so she gets nothing; a member who joins the room does.
+    expect(await late.emitWithAck('room:join', { slug })).toMatchObject({ ok: false });
+    const tab2 = connect(
+      (
+        await request(server).post('/api/v1/auth/login').send({
+          email: 'alice@example.com',
+          password: 'correct horse battery',
+        })
+      ).body.accessToken,
+    );
+    await connected(tab2);
+    const roster = nextRoster(tab2);
+    await tab2.emitWithAck('room:join', { slug });
+    expect((await roster).peers).toEqual([
+      { peerId: alice!.id, user: { id: expect.any(String), username: 'alice' }, media: on },
+    ]);
+  });
+
+  it('joins, lists the others, and tells the whole room', async () => {
+    const { slug, all } = await setUp(['bob', 'carol']);
+    const [alice, bob, carol] = all;
+
+    const first = await alice!.emitWithAck('call:join', { slug, media: on });
+    expect(first).toEqual({ ok: true, data: { peerId: alice!.id, peers: [] } });
+
+    // Carol isn't in the call but sees who is.
+    const seen = rosterWhere(carol!, (r) => names(r) === 'alice,bob');
+    const second = await bob!.emitWithAck('call:join', {
+      slug,
+      media: { audio: true, video: false },
+    });
+    expect(second).toEqual({
+      ok: true,
+      data: {
+        peerId: bob!.id,
+        peers: [
+          { peerId: alice!.id, user: { id: expect.any(String), username: 'alice' }, media: on },
+        ],
+      },
+    });
+    expect((await seen).peers.map((p) => p.user.username).sort()).toEqual(['alice', 'bob']);
+
+    // Changing media updates the roster; leaving removes the peer.
+    let roster = rosterWhere(carol!, (r) => r.peers.some((p) => !p.media.audio));
+    bob!.emit('call:media', { slug, media: { audio: false, video: false } });
+    expect((await roster).peers.find((p) => p.peerId === bob!.id)?.media).toEqual({
+      audio: false,
+      video: false,
+    });
+    roster = rosterWhere(carol!, (r) => names(r) === 'alice');
+    bob!.emit('call:leave', { slug });
+    expect((await roster).peers.map((p) => p.peerId)).toEqual([alice!.id]);
+
+    // Disconnecting counts as leaving.
+    roster = rosterWhere(carol!, (r) => r.peers.length === 0);
+    alice!.disconnect();
+    expect((await roster).peers).toEqual([]);
+  });
+
+  it('needs the room joined first, and holds at most four', async () => {
+    const { slug, all } = await setUp(['bob', 'carol', 'dave', 'erin']);
+    const outsider = connect(await signUp('zed'));
+    await connected(outsider);
+    expect(await outsider.emitWithAck('call:join', { slug, media: on })).toEqual({
+      ok: false,
+      error: 'Join the room first',
+    });
+
+    const answers = await Promise.all(
+      all.map((c) => c.emitWithAck('call:join', { slug, media: on })),
+    );
+    expect(answers.filter((a) => a.ok)).toHaveLength(4);
+    expect(answers.filter((a) => !a.ok)).toEqual([
+      { ok: false, error: 'The call is full (4 people at most)' },
+    ]);
+    expect(
+      await all[0]!.emitWithAck('call:join', { slug, media: 'loud' } as unknown as {
+        slug: string;
+        media: { audio: boolean; video: boolean };
+      }),
+    ).toEqual({ ok: false, error: 'Invalid call' });
+  });
+
+  it('relays descriptions and candidates to one peer in the same call only', async () => {
+    const { slug, all } = await setUp(['bob', 'carol']);
+    const [alice, bob, carol] = all;
+    await alice!.emitWithAck('call:join', { slug, media: on });
+    await bob!.emitWithAck('call:join', { slug, media: on });
+
+    const atBob = new Promise((resolve) => bob!.once('rtc:description', resolve));
+    const iceAtBob = new Promise((resolve) => bob!.once('rtc:ice', resolve));
+    const carolGot: string[] = [];
+    carol!.onAny((event: string) => carolGot.push(event));
+
+    alice!.emit('rtc:description', { to: bob!.id!, description: sdp('offer') });
+    alice!.emit('rtc:ice', {
+      to: bob!.id!,
+      candidate: {
+        candidate: 'candidate:1 1 udp 1 192.0.2.1 5000 typ host',
+        sdpMid: '0',
+        sdpMLineIndex: 0,
+      },
+    });
+    expect(await atBob).toEqual({ from: alice!.id, description: sdp('offer') });
+    expect(await iceAtBob).toMatchObject({ from: alice!.id, candidate: { sdpMid: '0' } });
+
+    // Carol (in the room, not the call) can neither send nor receive signalling.
+    const bobGot: string[] = [];
+    bob!.onAny((event: string) => bobGot.push(event));
+    carol!.emit('rtc:description', { to: bob!.id!, description: sdp('offer') });
+    alice!.emit('rtc:description', { to: carol!.id!, description: sdp('offer') });
+    // Malformed: a rollback isn't relayed, and neither is a huge SDP.
+    alice!.emit('rtc:description', { to: bob!.id!, description: { type: 'rollback' } } as never);
+    alice!.emit('rtc:description', {
+      to: bob!.id!,
+      description: { type: 'offer', sdp: 'x'.repeat(40 * 1024) },
+    });
+    // A round trip on each sender proves the server has handled the messages above.
+    await carol!.emitWithAck('room:join', { slug });
+    await alice!.emitWithAck('room:join', { slug });
+    expect(bobGot.filter((e) => e.startsWith('rtc:'))).toEqual([]);
+    expect(carolGot.filter((e) => e.startsWith('rtc:'))).toEqual([]);
+  });
+
+  it('leaves the call when leaving the room', async () => {
+    const { slug, all } = await setUp(['bob']);
+    const [alice, bob] = all;
+    const inCall = rosterWhere(bob!, (r) => names(r) === 'alice');
+    await alice!.emitWithAck('call:join', { slug, media: on });
+    await inCall;
+    const roster = rosterWhere(bob!, (r) => r.peers.length === 0);
+    alice!.emit('room:leave', { slug });
+    expect((await roster).peers).toEqual([]);
+  });
+});

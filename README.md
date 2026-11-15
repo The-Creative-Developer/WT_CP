@@ -88,6 +88,7 @@ Wherever you implement a web-development concept, tag it in a comment:
 ## Documentation
 
 - [Execution plan](docs/PLAN.md)
+- [Voice and video calls (WebRTC)](docs/webrtc.md)
 - [REST API](docs/api.md) (live: [Swagger UI](https://devverse.52-175-72-73.sslip.io/api/docs) once deployed)
 - [Architecture decision records](docs/adr/)
 - [Deployment](docs/deployment.md)
