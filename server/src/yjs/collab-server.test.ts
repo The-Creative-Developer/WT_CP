@@ -158,6 +158,33 @@ describe('collaborative editing', () => {
     expect(a.text.toString()).toBe(`${original}// owner edit\n`);
   });
 
+  it('merges edits made while disconnected, losing nothing (CRDT)', async () => {
+    const { owner, slug, fileId, invite } = await setUpRoom();
+    const bob = await joinAs('bob', slug, invite);
+    const a = connect(owner, slug, fileId);
+    const b = connect(bob, slug, fileId);
+    await Promise.all([synced(a.provider), synced(b.provider)]);
+
+    // Bob loses his connection and keeps typing; Alice edits the same line meanwhile.
+    b.provider.disconnect();
+    a.text.insert(0, 'A1 ');
+    b.text.insert(0, 'B1 ');
+    b.text.insert(b.text.length, '// offline\n');
+    await new Promise((r) => setTimeout(r, 100));
+    expect(a.text.toString()).not.toContain('B1');
+
+    b.provider.connect();
+    await eventually(() => a.text.toString() === b.text.toString());
+    const merged = a.text.toString();
+    for (const edit of ['A1 ', 'B1 ', '// offline\n', "console.log('Hello from DevVerse!')"]) {
+      expect(merged).toContain(edit);
+    }
+
+    // And the merged version is what gets saved.
+    providers.splice(0).forEach((p) => p.destroy());
+    await eventually(async () => (await File.findById(fileId).lean())?.content === merged);
+  });
+
   it('saves to MongoDB when everyone leaves, and reloads without duplicating text', async () => {
     const { owner, slug, fileId } = await setUpRoom();
     const a = connect(owner, slug, fileId);

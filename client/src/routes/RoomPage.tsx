@@ -49,13 +49,7 @@ export function RoomPage() {
     }
   }, [invite, memberRole, setSearchParams]);
 
-  if (room.isPending) {
-    return (
-      <p role="status" className="py-16 text-center text-muted">
-        Opening room…
-      </p>
-    );
-  }
+  if (room.isPending) return <RoomSkeleton />;
 
   if (room.isError) {
     const status = room.error instanceof ApiError ? room.error.status : 0;
@@ -431,5 +425,29 @@ function Notice({ title, body }: { title: string; body: string }) {
         Back to your dashboard
       </Link>
     </section>
+  );
+}
+
+/**
+ * Grey blocks in the shape of the room (title, file tree, editor, sidebar), so the page doesn't jump when it
+ * arrives. Hidden from screen readers, which hear the status message instead.
+ */
+function RoomSkeleton() {
+  const block = 'animate-pulse rounded-xl border border-border bg-surface-2';
+  return (
+    <div role="status" className="flex flex-col gap-6">
+      <span className="sr-only">Opening room…</span>
+      <div
+        aria-hidden="true"
+        className="h-8 w-64 max-w-full animate-pulse rounded-md bg-surface-2"
+      />
+      <div aria-hidden="true" className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="grid gap-4 md:grid-cols-[13rem_minmax(0,1fr)]">
+          <div className={`h-40 md:h-[60vh] ${block}`} />
+          <div className={`h-[60vh] min-h-80 ${block}`} />
+        </div>
+        <div className={`h-64 ${block}`} />
+      </div>
+    </div>
   );
 }
