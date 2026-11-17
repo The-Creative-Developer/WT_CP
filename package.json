@@ -27,7 +27,7 @@
     "seed:demo": "node scripts/seed-demo.mjs",
     "db:up": "docker compose up -d mongo",
     "db:down": "docker compose down",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "lint-staged": {
     "*.{ts,tsx,js,mjs}": [
